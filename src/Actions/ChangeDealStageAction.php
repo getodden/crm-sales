@@ -26,6 +26,11 @@ class ChangeDealStageAction
             $fromStage = $deal->stage;
             $now = now();
 
+            // Already in that stage: nothing moves, so no automations run, no history row is added and no event fires.
+            if ($fromStage->id === $toStage->id) {
+                return $deal;
+            }
+
             // Run automation guards and actions
             app(ExecuteStageAutomationsAction::class)->execute($deal, $toStage, $userId);
 

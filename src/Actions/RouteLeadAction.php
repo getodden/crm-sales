@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Odden\Sales\Actions;
 
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
 use Odden\Core\Enums\ActivityType;
 use Odden\Core\Models\Contact;
 use Odden\Core\Support\UserModel;
@@ -92,14 +93,19 @@ class RouteLeadAction
             return (int) $pool[0];
         }
 
-        $nextIndex = ($rule->last_assigned_index + 1) % $count;
-        $selectedUserId = $pool[$nextIndex] ?? $pool[0];
+        // Read and advance the pointer under a row lock: two leads routed at the same moment must not both read
+        // the same index and go to the same person.
+        return DB::transaction(function () use ($rule, $pool, $count): int {
+            $locked = LeadRoutingRule::query()->whereKey($rule->getKey())->lockForUpdate()->first() ?? $rule;
 
-        $rule->update([
-            'last_assigned_index' => $nextIndex,
-        ]);
+            $nextIndex = ($locked->last_assigned_index + 1) % $count;
+            $selectedUserId = $pool[$nextIndex] ?? $pool[0];
 
-        return (int) $selectedUserId;
+            $locked->update(['last_assigned_index' => $nextIndex]);
+            $rule->last_assigned_index = $nextIndex;
+
+            return (int) $selectedUserId;
+        });
     }
 
     /**

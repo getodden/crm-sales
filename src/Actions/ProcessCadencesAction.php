@@ -11,6 +11,7 @@ use Odden\Core\Enums\ActivityStatus;
 use Odden\Core\Enums\ActivityType;
 use Odden\Core\Enums\LeadStatus;
 use Odden\Core\Models\Activity;
+use Odden\Core\Models\Contact;
 use Odden\Core\Support\UserModel;
 use Odden\Sales\Mail\SalesMail;
 use Odden\Sales\Mail\SequenceStepMail;
@@ -67,7 +68,16 @@ class ProcessCadencesAction
             $contact = $enrollment->contact;
             $sequence = $enrollment->sequence;
 
-            if (! $sequence->is_active) {
+            // The contact was deleted (soft-deleted contacts do not load): there is nobody to run the cadence for,
+            // and one such enrollment must not stop every enrollment after it.
+            if ($enrollment->getRelation('contact') === null) {
+                $enrollment->update(['status' => 'unenrolled', 'next_step_due_at' => null]);
+                $stats['unenrolled']++;
+
+                continue;
+            }
+
+            if ($enrollment->getRelation('sequence') === null || ! $sequence->is_active) {
                 continue;
             }
 
@@ -118,18 +128,7 @@ class ProcessCadencesAction
                 };
 
                 // Check if existing activity was already created for this enrollment step
-                /** @var Activity|null $existingActivity */
-                $existingActivity = Activity::query()
-                    ->where('subject_type', $contact->getMorphClass())
-                    ->where('subject_id', $contact->id)
-                    ->where('type', $actType)
-                    ->where(function ($q) use ($enrollment, $sequence): void {
-                        $q->where('metadata->sequence_enrollment_id', $enrollment->id)
-                            ->where('metadata->step', $enrollment->current_step)
-                            ->orWhere('body', 'like', "%Cadence [{$sequence->name}] Step {$enrollment->current_step}%");
-                    })
-                    ->latest('id')
-                    ->first();
+                $existingActivity = $this->activityForStep($enrollment, $contact, $sequence->name, $actType);
 
                 if ($existingActivity !== null) {
                     if ($existingActivity->status === ActivityStatus::Completed) {
@@ -271,5 +270,44 @@ class ProcessCadencesAction
         ));
 
         return 'sent';
+    }
+
+    /**
+     * The activity this enrollment already created for its current manual step, if any.
+     *
+     * Activities carry the enrollment id and step in their metadata. Activities from before that metadata existed are
+     * recognised by their text. Either way only activities created since the current run began count, so a contact
+     * who is enrolled again is not treated as having already done the steps of the earlier run.
+     */
+    protected function activityForStep(SalesSequenceEnrollment $enrollment, Contact $contact, string $sequenceName, ActivityType $type): ?Activity
+    {
+        // Only what happened since this run began: the row is re-used when a contact is enrolled again.
+        $base = Activity::query()
+            ->where('subject_type', $contact->getMorphClass())
+            ->where('subject_id', $contact->id)
+            ->where('type', $type)
+            ->where('created_at', '>=', $enrollment->enrolled_at ?? $enrollment->created_at);
+
+        /** @var Activity|null $current */
+        $current = (clone $base)
+            ->where('metadata->sequence_enrollment_id', $enrollment->id)
+            ->where('metadata->step', $enrollment->current_step)
+            ->latest('id')
+            ->first();
+
+        if ($current !== null) {
+            return $current;
+        }
+
+        $marker = "Cadence [{$sequenceName}] Step {$enrollment->current_step}";
+
+        /** @var Activity|null $legacy */
+        $legacy = (clone $base)
+            ->whereNull('metadata->sequence_enrollment_id')
+            ->latest('id')
+            ->get()
+            ->first(fn (Activity $activity): bool => str_contains((string) $activity->body, $marker));
+
+        return $legacy;
     }
 }

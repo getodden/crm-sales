@@ -5,14 +5,18 @@ declare(strict_types=1);
 namespace Odden\Sales\Tests;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Exceptions;
 use Odden\Sales\Actions\AcceptQuoteAction;
 use Odden\Sales\Enums\DealStatus;
 use Odden\Sales\Enums\QuoteStatus;
 use Odden\Sales\Enums\StageAutomationActionType;
+use Odden\Sales\Events\DealMovedStage;
+use Odden\Sales\Events\DealWon;
 use Odden\Sales\Exceptions\QuoteNotAcceptableException;
 use Odden\Sales\Exceptions\StageRequirementException;
 use Odden\Sales\Models\Deal;
+use Odden\Sales\Models\DealStageHistory;
 use Odden\Sales\Models\Pipeline;
 use Odden\Sales\Models\PipelineStage;
 use Odden\Sales\Models\Quote;
@@ -87,6 +91,101 @@ class QuoteAcceptanceTest extends TestCase
     /**
      * @param  array<string, mixed>  $attributes
      */
+    public function test_the_won_event_sees_the_signed_total_not_the_old_deal_amount(): void
+    {
+        $quote = $this->quoteOnOpenDeal(['total_amount' => 7300.00]);
+        $quote->deal->update(['amount' => 100.00]);
+
+        $seen = [];
+        Event::listen(DealWon::class, function (DealWon $event) use (&$seen): void {
+            $seen[] = (float) $event->deal->amount;
+        });
+
+        app(AcceptQuoteAction::class)->execute($quote->public_token, 'Alice', 'alice@acme.com');
+
+        $this->assertSame([7300.0], $seen);
+    }
+
+    public function test_a_second_signed_quote_on_a_won_deal_does_not_win_it_again(): void
+    {
+        $first = $this->quoteOnOpenDeal(['total_amount' => 5000.00]);
+        $deal = $first->deal;
+        app(AcceptQuoteAction::class)->execute($first->public_token, 'Alice', 'alice@acme.com');
+
+        $historyRows = DealStageHistory::query()->where('deal_id', $deal->id)->count();
+        $second = Quote::factory()->create(['deal_id' => $deal->id, 'status' => QuoteStatus::Sent, 'total_amount' => 9000.00]);
+
+        $won = 0;
+        Event::listen(DealWon::class, function () use (&$won): void {
+            $won++;
+        });
+
+        app(AcceptQuoteAction::class)->execute($second->public_token, 'Alice', 'alice@acme.com');
+
+        $this->assertSame(QuoteStatus::Accepted, $second->fresh()?->status, 'The second signature is still recorded');
+        $this->assertSame(0, $won, 'No second DealWon');
+        $this->assertSame($historyRows, DealStageHistory::query()->where('deal_id', $deal->id)->count(), 'No second history row');
+        $this->assertSame(5000.0, (float) $deal->fresh()?->amount, 'The deal keeps the amount it was won at');
+    }
+
+    public function test_a_quote_on_a_lost_deal_cannot_be_signed(): void
+    {
+        $quote = $this->quoteOnOpenDeal();
+        $lost = $quote->deal->pipeline->stages->firstWhere('is_closed_lost', true);
+        $quote->deal->moveToStage($lost);
+
+        try {
+            app(AcceptQuoteAction::class)->execute($quote->public_token, 'Alice', 'alice@acme.com');
+            $this->fail('Expected the quote to be refused');
+        } catch (QuoteNotAcceptableException $e) {
+            $this->assertStringContainsString('no longer open', $e->getMessage());
+        }
+
+        $this->assertSame(QuoteStatus::Sent, $quote->fresh()?->status);
+        $this->assertSame(DealStatus::Lost, $quote->deal->fresh()?->status);
+    }
+
+    public function test_moving_a_deal_to_the_stage_it_is_already_in_does_nothing(): void
+    {
+        $quote = $this->quoteOnOpenDeal();
+        $deal = $quote->deal;
+        $before = DealStageHistory::query()->where('deal_id', $deal->id)->count();
+
+        $moved = 0;
+        Event::listen(DealMovedStage::class, function () use (&$moved): void {
+            $moved++;
+        });
+
+        $deal->moveToStage($deal->stage);
+
+        $this->assertSame(0, $moved);
+        $this->assertSame($before, DealStageHistory::query()->where('deal_id', $deal->id)->count());
+    }
+
+    public function test_a_quote_whose_deal_was_deleted_is_a_404_not_a_500(): void
+    {
+        $quote = $this->quoteOnOpenDeal(['public_token' => 'orphan-token']);
+        $quote->deal->delete();
+
+        $this->get('/quotes/orphan-token')->assertNotFound();
+
+        $this->post('/quotes/orphan-token/accept', ['signed_name' => 'Alice', 'signed_email' => 'alice@acme.com', 'agree_terms' => '1'])
+            ->assertSessionHasErrors('error');
+        $this->assertSame(QuoteStatus::Sent, $quote->fresh()?->status);
+    }
+
+    public function test_a_draft_that_was_never_sent_cannot_be_signed(): void
+    {
+        $quote = $this->quoteOnOpenDeal(['status' => QuoteStatus::Draft, 'public_token' => 'draft-token']);
+
+        // Posting straight to the accept URL, without ever opening (and so sending) the proposal.
+        $this->post('/quotes/draft-token/accept', ['signed_name' => 'Alice', 'signed_email' => 'alice@acme.com', 'agree_terms' => '1'])
+            ->assertSessionHasErrors('error');
+
+        $this->assertSame(QuoteStatus::Draft, $quote->fresh()?->status);
+        $this->assertSame(DealStatus::Open, $quote->deal->fresh()?->status);
+    }
+
     protected function quoteOnOpenDeal(array $attributes = []): Quote
     {
         $pipeline = Pipeline::factory()->withStages()->create();

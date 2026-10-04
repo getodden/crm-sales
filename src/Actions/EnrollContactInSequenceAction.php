@@ -31,6 +31,7 @@ class EnrollContactInSequenceAction
                 'status' => 'active',
                 'next_step_due_at' => now()->addDays($delayDays)->toDateString(),
                 'enrolled_by_id' => $enrolledById ?? auth()->id(),
+                'enrolled_at' => now(),
             ]
         );
 

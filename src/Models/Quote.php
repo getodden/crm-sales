@@ -16,6 +16,7 @@ use Illuminate\Support\Str;
 use Odden\Core\Support\UserModel;
 use Odden\Sales\Database\Factories\QuoteFactory;
 use Odden\Sales\Enums\QuoteStatus;
+use Odden\Sales\Exceptions\QuoteLockedException;
 use Odden\Sales\Exceptions\QuoteNotAcceptableException;
 
 /**
@@ -112,7 +113,26 @@ class Quote extends Model
             }
 
             if (empty($quote->quote_number)) {
-                $quote->quote_number = 'Q-'.now()->format('Y').'-'.strtoupper(Str::random(5));
+                // Five random characters can repeat; the number is unique, so look for a free one.
+                do {
+                    $number = 'Q-'.now()->format('Y').'-'.strtoupper(Str::random(5));
+                } while (static::query()->withTrashed()->where('quote_number', $number)->exists());
+
+                $quote->quote_number = $number;
+            }
+        });
+
+        // The customer's signature covers the figures, so they are fixed once the quote is accepted.
+        static::updating(function (self $quote): void {
+            if ($quote->getOriginal('status') === QuoteStatus::Accepted && $quote->isDirty(['discount_amount', 'tax_amount', 'currency', 'deal_id'])) {
+                throw QuoteLockedException::signed();
+            }
+        });
+
+        // A new discount or tax changes the total, whether or not the quote has items.
+        static::saved(function (self $quote): void {
+            if ($quote->wasChanged(['discount_amount', 'tax_amount'])) {
+                $quote->recalculateTotals();
             }
         });
     }

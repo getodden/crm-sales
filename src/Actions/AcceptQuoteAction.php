@@ -54,6 +54,15 @@ class AcceptQuoteAction
             // Re-check under the row lock so concurrent submissions cannot both accept.
             $this->ensureAcceptable($locked);
 
+            if ($locked->getRelation('deal') === null) {
+                throw new QuoteNotAcceptableException('This proposal is no longer available.');
+            }
+
+            // A deal that was closed as lost is not reopened by a signature on an old link.
+            if ($locked->deal->status === DealStatus::Lost) {
+                throw new QuoteNotAcceptableException('This proposal is no longer open. Please contact us about it.');
+            }
+
             $locked->update([
                 'status' => QuoteStatus::Accepted,
                 'accepted_at' => now(),
@@ -70,6 +79,10 @@ class AcceptQuoteAction
      */
     protected function ensureAcceptable(Quote $quote): void
     {
+        if ($quote->status === QuoteStatus::Draft) {
+            throw new QuoteNotAcceptableException('This proposal has not been sent yet.');
+        }
+
         if ($quote->status->isTerminal()) {
             throw new QuoteNotAcceptableException(match ($quote->status) {
                 QuoteStatus::Accepted => 'This quote proposal has already been accepted.',
@@ -88,18 +101,23 @@ class AcceptQuoteAction
     protected function closeDealAsWon(Quote $quote): Quote
     {
         $deal = $quote->deal;
-        /** @var PipelineStage|null $wonStage */
-        $wonStage = $deal->pipeline->stages->firstWhere('is_closed_won', true);
 
-        if ($wonStage !== null) {
-            $deal->moveToStage($wonStage);
+        // A second signed quote on a deal that is already won is recorded, but does not win it again: that would
+        // re-run the stage automations, repeat the history entry and fire DealWon a second time.
+        if ($deal->status !== DealStatus::Won) {
+            /** @var PipelineStage|null $wonStage */
+            $wonStage = $deal->pipeline->stages->firstWhere('is_closed_won', true);
+
+            // The amount first, so what listens for DealWon sees the signed total.
+            $deal->update(['amount' => (float) $quote->total_amount]);
+
+            if ($wonStage !== null) {
+                // The move into a closed-won stage also sets the status and closing time.
+                $deal->moveToStage($wonStage);
+            } else {
+                $deal->update(['status' => DealStatus::Won, 'closed_at' => now()]);
+            }
         }
-
-        $deal->update([
-            'status' => DealStatus::Won,
-            'closed_at' => now(),
-            'amount' => (float) $quote->total_amount,
-        ]);
 
         $deal->logActivity(
             type: ActivityType::Note,

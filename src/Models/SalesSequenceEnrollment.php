@@ -18,6 +18,7 @@ use Odden\Core\Support\UserModel;
  * @property string $status
  * @property CarbonInterface|null $next_step_due_at
  * @property int|null $enrolled_by_id
+ * @property CarbonInterface|null $enrolled_at
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
  * @property-read SalesSequence $sequence
@@ -38,6 +39,7 @@ class SalesSequenceEnrollment extends Model
         'status',
         'next_step_due_at',
         'enrolled_by_id',
+        'enrolled_at',
     ];
 
     /**
@@ -58,6 +60,7 @@ class SalesSequenceEnrollment extends Model
         return [
             'current_step' => 'integer',
             'next_step_due_at' => 'date',
+            'enrolled_at' => 'datetime',
         ];
     }
 

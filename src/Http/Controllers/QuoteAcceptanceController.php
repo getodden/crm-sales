@@ -27,6 +27,9 @@ class QuoteAcceptanceController extends Controller
             ->with(['deal.contacts.companies', 'items'])
             ->firstOrFail();
 
+        // A quote whose deal has been deleted has nothing to show or to sign.
+        abort_if($quote->getRelation('deal') === null, 404);
+
         // 1. If quote is Draft, transition to Sent upon client opening
         if ($quote->status === QuoteStatus::Draft) {
             $quote->updateQuietly(['status' => QuoteStatus::Sent]);

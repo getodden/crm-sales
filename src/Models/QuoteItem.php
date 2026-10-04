@@ -7,6 +7,8 @@ namespace Odden\Sales\Models;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Odden\Sales\Enums\QuoteStatus;
+use Odden\Sales\Exceptions\QuoteLockedException;
 
 /**
  * @property int $id
@@ -81,6 +83,8 @@ class QuoteItem extends Model
     protected static function booted(): void
     {
         static::saving(function (self $item): void {
+            self::ensureQuoteIsOpen($item);
+
             $subtotal = (float) $item->quantity * (float) $item->unit_price;
             $discountMultiplier = 1 - ((float) $item->discount_percent / 100);
             $item->total_price = round(max(0, $subtotal * $discountMultiplier), 2);
@@ -90,9 +94,25 @@ class QuoteItem extends Model
             $item->quote->recalculateTotals();
         });
 
+        static::deleting(function (self $item): void {
+            self::ensureQuoteIsOpen($item);
+        });
+
         static::deleted(function (self $item): void {
             $item->quote->recalculateTotals();
         });
+    }
+
+    /**
+     * Lines of a quote the customer has signed are part of what they signed.
+     *
+     * @throws QuoteLockedException
+     */
+    private static function ensureQuoteIsOpen(self $item): void
+    {
+        if ($item->quote->status === QuoteStatus::Accepted) {
+            throw QuoteLockedException::signed();
+        }
     }
 
     /**
