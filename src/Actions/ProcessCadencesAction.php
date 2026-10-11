@@ -259,13 +259,15 @@ class ProcessCadencesAction
         $ownerName = $owner !== null ? UserModel::displayName($owner, '') : '';
         $ownerName = $ownerName !== '' ? $ownerName : null;
         $sendAsOwner = (bool) config('odden-sales.mail.sequences.send_as_owner', false) && $ownerEmail !== null;
+        $configuredReplyTo = config('odden-sales.mail.sequences.reply_to');
+        $replyTo = is_string($configuredReplyTo) && $configuredReplyTo !== '' ? $configuredReplyTo : $ownerEmail;
 
         SalesMail::to($email, $contact->full_name)->queue(new SequenceStepMail(
             subjectLine: $rendered['subject'],
             htmlBody: $rendered['body_html'],
             fromAddress: $sendAsOwner ? $ownerEmail : null,
             fromName: $sendAsOwner ? $ownerName : null,
-            replyToAddress: $ownerEmail,
+            replyToAddress: $replyTo,
             replyToName: $ownerName,
         ));
 

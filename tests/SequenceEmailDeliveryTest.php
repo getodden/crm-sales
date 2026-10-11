@@ -233,3 +233,14 @@ it('delivers the queued step through the real mailer', function (): void {
         ->and($messages[0]->toString())->toContain('Subject: Hello Dana & team')
         ->and($messages[0]->toString())->toContain('dana@example.com');
 });
+
+it('sends replies to the configured reply-to address instead of the rep', function (): void {
+    config(['odden-sales.mail.sequences.reply_to' => 'replies@inbound.example']);
+    $contact = Contact::factory()->create(['email' => 'dana@example.com']);
+    $sequence = ($this->makeSequence)([($this->emailStep)($this->template->id)]);
+    app(EnrollContactInSequenceAction::class)->execute($contact, $sequence, $this->rep->id);
+
+    app(ProcessCadencesAction::class)->execute();
+
+    Mail::assertQueued(SequenceStepMail::class, fn (SequenceStepMail $mail): bool => $mail->replyToAddress === 'replies@inbound.example');
+});

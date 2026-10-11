@@ -49,6 +49,10 @@ return [
 
         'sequences' => [
             'send_as_owner' => (bool) env('ODDEN_SALES_SEND_AS_OWNER', false),
+
+            // Where replies to sequence emails go. Null uses the rep's own address. Set it to an address your app
+            // receives mail at, so a reply can be seen (and StopSequencesOnReplyAction can stop the sequence).
+            'reply_to' => env('ODDEN_SALES_REPLY_TO'),
         ],
     ],
 
