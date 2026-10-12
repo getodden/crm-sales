@@ -95,6 +95,20 @@ class SalesSequenceEnrollment extends Model
     }
 
     /**
+     * Whether this run of the cadence began after the contact became a customer, as an onboarding or
+     * customer cadence does. Prospecting cadences began before, and stop when the contact becomes one.
+     */
+    public function beganAfterContactBecameCustomer(): bool
+    {
+        /** @var Contact|null $contact A deleted contact does not load. */
+        $contact = $this->getRelationValue('contact');
+        $becameCustomerAt = $contact?->became_customer_at;
+        $began = $this->enrolled_at ?? $this->created_at;
+
+        return $becameCustomerAt !== null && $began !== null && $began->gte($becameCustomerAt);
+    }
+
+    /**
      * Advance to the next sequence step or complete if on final step.
      */
     public function advanceStep(): self

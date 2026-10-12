@@ -187,6 +187,14 @@ class Quote extends Model
     }
 
     /**
+     * The quote's value without tax: the subtotal after the discount.
+     */
+    public function netAmount(): float
+    {
+        return round(max(0, (float) $this->total_amount - (float) $this->tax_amount), 2);
+    }
+
+    /**
      * Check if the quote has expired.
      */
     public function isExpired(): bool

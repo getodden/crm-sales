@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Odden\Sales\Tests;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Exceptions;
 use Odden\Sales\Actions\AcceptQuoteAction;
@@ -16,6 +17,7 @@ use Odden\Sales\Events\DealWon;
 use Odden\Sales\Exceptions\QuoteNotAcceptableException;
 use Odden\Sales\Exceptions\StageRequirementException;
 use Odden\Sales\Models\Deal;
+use Odden\Sales\Models\DealProduct;
 use Odden\Sales\Models\DealStageHistory;
 use Odden\Sales\Models\Pipeline;
 use Odden\Sales\Models\PipelineStage;
@@ -64,6 +66,7 @@ class QuoteAcceptanceTest extends TestCase
         $quote = Quote::factory()->create([
             'deal_id' => $deal->id,
             'status' => QuoteStatus::Sent,
+            'tax_amount' => 0.00,
             'total_amount' => 12500.00,
             'public_token' => 'sign-token-123',
         ]);
@@ -113,7 +116,7 @@ class QuoteAcceptanceTest extends TestCase
         app(AcceptQuoteAction::class)->execute($first->public_token, 'Alice', 'alice@acme.com');
 
         $historyRows = DealStageHistory::query()->where('deal_id', $deal->id)->count();
-        $second = Quote::factory()->create(['deal_id' => $deal->id, 'status' => QuoteStatus::Sent, 'total_amount' => 9000.00]);
+        $second = Quote::factory()->create(['deal_id' => $deal->id, 'status' => QuoteStatus::Sent, 'tax_amount' => 0.00, 'total_amount' => 9000.00]);
 
         $won = 0;
         Event::listen(DealWon::class, function () use (&$won): void {
@@ -126,6 +129,43 @@ class QuoteAcceptanceTest extends TestCase
         $this->assertSame(0, $won, 'No second DealWon');
         $this->assertSame($historyRows, DealStageHistory::query()->where('deal_id', $deal->id)->count(), 'No second history row');
         $this->assertSame(5000.0, (float) $deal->fresh()?->amount, 'The deal keeps the amount it was won at');
+    }
+
+    public function test_the_deal_is_won_at_the_net_amount_in_the_quote_currency(): void
+    {
+        $quote = $this->quoteOnOpenDeal(['subtotal' => 10000.00, 'discount_amount' => 1000.00, 'tax_amount' => 1710.00, 'total_amount' => 10710.00, 'currency' => 'EUR']);
+
+        app(AcceptQuoteAction::class)->execute($quote->public_token, 'Alice', 'alice@acme.com');
+
+        $deal = $quote->deal->fresh();
+        $this->assertSame(9000.0, (float) $deal?->amount, 'Tax is not counted as revenue');
+        $this->assertSame('EUR', $deal->currency);
+    }
+
+    public function test_a_product_edit_after_the_signature_does_not_change_the_won_amount(): void
+    {
+        $quote = $this->quoteOnOpenDeal(['total_amount' => 5000.00]);
+        app(AcceptQuoteAction::class)->execute($quote->public_token, 'Alice', 'alice@acme.com');
+
+        DealProduct::factory()->create(['deal_id' => $quote->deal_id, 'unit_price' => 50.00, 'quantity' => 1, 'discount_percent' => 0]);
+
+        $this->assertSame(5000.0, (float) $quote->deal->fresh()?->amount);
+    }
+
+    public function test_acceptance_locks_the_deal_row(): void
+    {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            $this->markTestSkipped('SQLite has no row locks.');
+        }
+
+        $quote = $this->quoteOnOpenDeal();
+        DB::enableQueryLog();
+
+        app(AcceptQuoteAction::class)->execute($quote->public_token, 'Alice', 'alice@acme.com');
+
+        $dealLocks = collect(DB::getQueryLog())->filter(fn (array $query): bool => str_contains($query['query'], 'odden_deals')
+            && str_contains(strtolower($query['query']), 'for update'));
+        $this->assertNotEmpty($dealLocks);
     }
 
     public function test_a_quote_on_a_lost_deal_cannot_be_signed(): void
@@ -198,6 +238,7 @@ class QuoteAcceptanceTest extends TestCase
         return Quote::factory()->create(array_merge([
             'deal_id' => $deal->id,
             'status' => QuoteStatus::Sent,
+            'tax_amount' => 0.00,
             'total_amount' => 5000.00,
         ], $attributes));
     }
