@@ -18,10 +18,13 @@ class CalculatePipelineForecastAction
      * `$visibleDeals` limits the figures to deals in the given query (for example the deals a panel
      * user may see); without it every deal is counted.
      *
+<<<<<<< HEAD
      * Amounts are never added across currencies. The figures cover one currency, `currency` in the
      * result: `$currency` when given, otherwise the default currency (or, when no deal uses it, the
      * most-used one). Deals in any other currency are listed separately under `other_currencies`.
      *
+=======
+>>>>>>> fix/filament-page-scoping
      * @param  Builder<Deal>|null  $visibleDeals
      * @return array{
      *     currency: string,
