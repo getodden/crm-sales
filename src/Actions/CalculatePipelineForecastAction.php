@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Odden\Sales\Actions;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Odden\Sales\Enums\DealStatus;
 use Odden\Sales\Models\Deal;
@@ -12,6 +13,11 @@ class CalculatePipelineForecastAction
 {
     /**
      * Calculate pipeline sales forecast and conversion metrics, optionally for one pipeline and/or one team's deals.
+     *
+     * `$visibleDeals` limits the figures to deals in the given query (for example the deals a panel
+     * user may see); without it every deal is counted.
+     *
+     * @param  Builder<Deal>|null  $visibleDeals
      *
      * @return array{
      *     open_value: float,
@@ -26,12 +32,15 @@ class CalculatePipelineForecastAction
      *     stale_deals_count: int
      * }
      */
-    public function execute(?int $pipelineId = null, ?int $teamId = null): array
+    public function execute(?int $pipelineId = null, ?int $teamId = null, ?Builder $visibleDeals = null): array
     {
         $dealsTable = config('odden-sales.tables.deals', 'odden_deals');
         $stagesTable = config('odden-sales.tables.stages', 'odden_pipeline_stages');
 
         $baseQuery = Deal::query();
+        if ($visibleDeals !== null) {
+            $baseQuery->whereIn("{$dealsTable}.id", $visibleDeals->select("{$dealsTable}.id"));
+        }
         if ($pipelineId !== null) {
             $baseQuery->where("{$dealsTable}.pipeline_id", $pipelineId);
         }
