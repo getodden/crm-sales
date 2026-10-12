@@ -6,6 +6,7 @@ namespace Odden\Sales\Actions;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 use Odden\Sales\Enums\DealStatus;
 use Odden\Sales\Models\Deal;
 
@@ -17,7 +18,7 @@ class CalculatePipelineForecastAction
      * `$visibleDeals` limits the figures to deals in the given query (for example the deals a panel
      * user may see); without it every deal is counted.
      *
-     * @param  Builder<Deal>|null  $visibleDeals
+     * @param  Builder<covariant Model>|null  $visibleDeals
      * @return array{
      *     open_value: float,
      *     open_count: int,
