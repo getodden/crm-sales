@@ -6,6 +6,7 @@ namespace Odden\Sales\Actions;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 use Odden\Sales\Enums\DealStatus;
 use Odden\Sales\Models\Deal;
 use Odden\Sales\Support\Money;
@@ -22,7 +23,7 @@ class CalculatePipelineForecastAction
      * result: `$currency` when given, otherwise the default currency (or, when no deal uses it, the
      * most-used one). Deals in any other currency are listed separately under `other_currencies`.
      *
-     * @param  Builder<Deal>|null  $visibleDeals
+     * @param  Builder<covariant Model>|null  $visibleDeals
      * @return array{
      *     currency: string,
      *     other_currencies: array<string, array{open_count: int, open_value: float, won_count: int, won_value: float, lost_count: int}>,
@@ -137,7 +138,7 @@ class CalculatePipelineForecastAction
             ->reorder()
             ->toBase()
             ->select(["{$dealsTable}.currency as currency", "{$dealsTable}.status as status"])
-            ->selectRaw("count(*) as deal_count, sum({$dealsTable}.amount) as deal_amount")
+            ->selectRaw('count(*) as deal_count, sum(amount) as deal_amount')
             ->groupBy("{$dealsTable}.currency", "{$dealsTable}.status")
             ->get();
 

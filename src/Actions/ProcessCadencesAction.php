@@ -30,8 +30,9 @@ class ProcessCadencesAction
     ];
 
     /**
-     * Process due steps across all active sales sequence enrollments.
+     * Process due steps across all active sales sequence enrollments, or only those in the given sequences.
      *
+     * @param  array<int, int|string>|null  $sequenceIds  Only process enrollments in these sequences (null: all).
      * @return array{
      *     processed: int,
      *     emails_sent: int,
@@ -40,9 +41,6 @@ class ProcessCadencesAction
      *     unenrolled: int,
      *     completed: int
      * }
-     */
-    /**
-     * @param  list<int|string>|null  $sequenceIds  Only process enrollments in these sequences (null: all).
      */
     public function execute(?array $sequenceIds = null): array
     {

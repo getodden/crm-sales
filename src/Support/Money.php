@@ -47,7 +47,7 @@ class Money
      * default. Amounts in different currencies must never be added together, so reports cover this one
      * currency and list the rest separately.
      *
-     * @param  Builder<Model>  $query
+     * @param  Builder<covariant Model>  $query
      */
     public static function reportingCurrency(Builder $query, string $column = 'currency'): string
     {
