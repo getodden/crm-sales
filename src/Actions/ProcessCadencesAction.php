@@ -30,8 +30,9 @@ class ProcessCadencesAction
     ];
 
     /**
-     * Process due steps across all active sales sequence enrollments.
+     * Process due steps across all active sales sequence enrollments, or only those in the given sequences.
      *
+     * @param  array<int, int|string>|null  $sequenceIds  Only process enrollments in these sequences (null: all).
      * @return array{
      *     processed: int,
      *     emails_sent: int,
@@ -41,7 +42,7 @@ class ProcessCadencesAction
      *     completed: int
      * }
      */
-    public function execute(): array
+    public function execute(?array $sequenceIds = null): array
     {
         $todayStr = Carbon::today()->toDateString();
 
@@ -57,6 +58,7 @@ class ProcessCadencesAction
         /** @var Collection<int, SalesSequenceEnrollment> $dueEnrollments */
         $dueEnrollments = SalesSequenceEnrollment::query()
             ->where('status', 'active')
+            ->when($sequenceIds !== null, fn ($q) => $q->whereIn('sequence_id', $sequenceIds))
             ->where(function ($q) use ($todayStr): void {
                 $q->whereNull('next_step_due_at')
                     ->orWhereDate('next_step_due_at', '<=', $todayStr);
