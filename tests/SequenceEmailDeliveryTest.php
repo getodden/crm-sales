@@ -7,6 +7,8 @@ use Illuminate\Mail\MailManager;
 use Illuminate\Support\Facades\Mail;
 use Odden\Core\Enums\ActivityStatus;
 use Odden\Core\Enums\ActivityType;
+use Odden\Core\Enums\EmailStatus;
+use Odden\Core\Enums\EmailStatusReason;
 use Odden\Core\Models\Activity;
 use Odden\Core\Models\Contact;
 use Odden\Sales\Actions\EnrollContactInSequenceAction;
@@ -101,6 +103,26 @@ it('skips contacts without an email and records why', function (): void {
     expect($activity->status)->toBe(ActivityStatus::Cancelled)
         ->and($activity->metadata)->toMatchArray(['skipped' => true, 'skip_reason' => 'missing_email', 'step' => 1]);
 });
+
+it('skips contacts whose email bounced or was found invalid', function (EmailStatusReason $reason, string $skipReason): void {
+    $contact = Contact::factory()->create([
+        'email' => 'dana@example.com',
+        'email_status' => EmailStatus::Invalid,
+        'email_status_reason' => $reason,
+    ]);
+    $sequence = ($this->makeSequence)([($this->emailStep)($this->template->id)]);
+    app(EnrollContactInSequenceAction::class)->execute($contact, $sequence, $this->rep->id);
+
+    $stats = app(ProcessCadencesAction::class)->execute();
+
+    Mail::assertNothingQueued();
+    expect($stats['emails_skipped'])->toBe(1)
+        ->and(Activity::query()->where('type', ActivityType::Email)->sole()->metadata)
+        ->toMatchArray(['skipped' => true, 'skip_reason' => $skipReason]);
+})->with([
+    'bounced' => [EmailStatusReason::Bounced, 'bounced'],
+    'no mail server' => [EmailStatusReason::NoMailServer, 'invalid_email'],
+]);
 
 it('skips email steps without a usable template instead of sending placeholder text', function (): void {
     $contact = Contact::factory()->create(['email' => 'dana@example.com']);

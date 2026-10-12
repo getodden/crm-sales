@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Odden\Sales\Tests;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Odden\Core\Enums\ActivityStatus;
 use Odden\Core\Enums\ActivityType;
 use Odden\Core\Enums\LeadStatus;
+use Odden\Core\Enums\LifecycleStage;
 use Odden\Core\Models\Activity;
 use Odden\Core\Models\Contact;
 use Odden\Sales\Actions\EnrollContactInSequenceAction;
@@ -132,5 +134,48 @@ class ProcessCadencesTest extends TestCase
 
         $this->assertSame(1, $stats['tasks_created'], 'The new run gets its own step 1 task');
         $this->assertSame(1, $second?->fresh()?->current_step, 'It waits for the rep instead of skipping ahead');
+    }
+
+    public function test_a_contact_who_became_a_customer_during_the_cadence_leaves_it(): void
+    {
+        $contact = Contact::factory()->create();
+        $enrollment = app(EnrollContactInSequenceAction::class)->execute($contact, $this->callSequence());
+
+        $this->travel(1)->hours();
+        $contact->update(['lifecycle_stage' => LifecycleStage::Customer, 'became_customer_at' => now()]);
+
+        $stats = app(ProcessCadencesAction::class)->execute();
+
+        $this->assertSame(1, $stats['unenrolled']);
+        $this->assertSame('unenrolled', $enrollment->fresh()?->status);
+        $this->assertSame(0, Activity::query()->count());
+    }
+
+    public function test_a_cadence_begun_after_the_contact_became_a_customer_keeps_going(): void
+    {
+        $contact = Contact::factory()->create(['lifecycle_stage' => LifecycleStage::Customer, 'became_customer_at' => now()->subWeek()]);
+        $enrollment = app(EnrollContactInSequenceAction::class)->execute($contact, $this->callSequence());
+
+        $stats = app(ProcessCadencesAction::class)->execute();
+
+        $this->assertSame(0, $stats['unenrolled']);
+        $this->assertSame(1, $stats['tasks_created']);
+        $this->assertSame('active', $enrollment->fresh()?->status);
+    }
+
+    public function test_the_run_processes_enrollments_in_chunks(): void
+    {
+        $sequence = $this->callSequence();
+        foreach (Contact::factory()->count(3)->create() as $contact) {
+            app(EnrollContactInSequenceAction::class)->execute($contact, $sequence);
+        }
+
+        DB::enableQueryLog();
+        $stats = app(ProcessCadencesAction::class)->execute();
+
+        $this->assertSame(3, $stats['tasks_created']);
+        $enrollmentSelects = collect(DB::getQueryLog())->pluck('query')
+            ->filter(fn (string $sql): bool => str_starts_with(strtolower($sql), 'select') && str_contains($sql, 'odden_sales_sequence_enrollments'));
+        $this->assertTrue($enrollmentSelects->contains(fn (string $sql): bool => str_contains(strtolower($sql), 'limit')), 'Enrollments are read a page at a time');
     }
 }

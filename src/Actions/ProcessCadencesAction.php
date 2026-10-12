@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Odden\Sales\Actions;
 
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\LazyCollection;
 use Odden\Core\Enums\ActivityStatus;
 use Odden\Core\Enums\ActivityType;
+use Odden\Core\Enums\EmailStatus;
 use Odden\Core\Enums\LeadStatus;
+use Odden\Core\Enums\LifecycleStage;
 use Odden\Core\Models\Activity;
 use Odden\Core\Models\Contact;
 use Odden\Core\Support\UserModel;
@@ -26,6 +28,7 @@ class ProcessCadencesAction
     public const SKIP_REASONS = [
         'missing_email' => 'Not sent: the contact has no email address.',
         'invalid_email' => 'Not sent: the contact\'s email address is not valid.',
+        'bounced' => 'Not sent: email to the contact\'s address has bounced.',
         'missing_template' => 'Not sent: the step has no email template, or its template was deleted.',
     ];
 
@@ -55,7 +58,8 @@ class ProcessCadencesAction
             'completed' => 0,
         ];
 
-        /** @var Collection<int, SalesSequenceEnrollment> $dueEnrollments */
+        // In chunks (by id, so the status changes below don't make it skip rows) rather than all at once.
+        /** @var LazyCollection<int, SalesSequenceEnrollment> $dueEnrollments */
         $dueEnrollments = SalesSequenceEnrollment::query()
             ->where('status', 'active')
             ->when($sequenceIds !== null, fn ($q) => $q->whereIn('sequence_id', $sequenceIds))
@@ -64,7 +68,7 @@ class ProcessCadencesAction
                     ->orWhereDate('next_step_due_at', '<=', $todayStr);
             })
             ->with(['contact.companies', 'sequence.user', 'enrolledBy'])
-            ->get();
+            ->lazyById(200);
 
         foreach ($dueEnrollments as $enrollment) {
             $contact = $enrollment->contact;
@@ -85,8 +89,13 @@ class ProcessCadencesAction
 
             $stats['processed']++;
 
-            // Auto-exit if contact has already become a Customer or has bad timing/unqualified
-            if ($contact->lead_status === LeadStatus::Unqualified || $contact->lead_status === LeadStatus::BadTiming) {
+            // Auto-exit if the contact is unqualified or has bad timing, or became a customer since this run began
+            // (a cadence begun after they became one, such as onboarding, keeps going).
+            $becameCustomerSince = in_array($contact->lifecycle_stage, [LifecycleStage::Customer, LifecycleStage::Evangelist], true)
+                && $contact->became_customer_at !== null
+                && ! $enrollment->beganAfterContactBecameCustomer();
+
+            if ($contact->lead_status === LeadStatus::Unqualified || $contact->lead_status === LeadStatus::BadTiming || $becameCustomerSince) {
                 $enrollment->update([
                     'status' => 'unenrolled',
                     'next_step_due_at' => null,
@@ -186,6 +195,8 @@ class ProcessCadencesAction
         $skipReason = match (true) {
             $email === '' => 'missing_email',
             filter_var($email, FILTER_VALIDATE_EMAIL) === false => 'invalid_email',
+            $contact->hasBounced() => 'bounced',
+            $contact->email_status === EmailStatus::Invalid => 'invalid_email',
             $template === null => 'missing_template',
             default => null,
         };
