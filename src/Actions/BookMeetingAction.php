@@ -93,6 +93,7 @@ class BookMeetingAction
         // Same lookup as the Service channels: case and surrounding whitespace are ignored, so a
         // contact saved as "Dana@Example.com" is reused rather than duplicated.
         $contact = ContactLookup::findByEmail($email);
+        $matchedExisting = false;
 
         $parts = preg_split('/\s+/', trim($fullName));
         $partsArray = is_array($parts) ? $parts : [$fullName];
@@ -109,17 +110,25 @@ class BookMeetingAction
                 'lead_status' => LeadStatus::Open,
                 'owner_id' => $link->user_id,
             ]);
+            $matchedExisting = false;
         } else {
-            if ($phone !== null && ! $contact->phone) {
-                $contact->updateQuietly(['phone' => $phone]);
-            }
+            // The email address is typed by an anonymous visitor and not verified, so nothing the
+            // visitor supplies is written onto an existing contact's record (no phone, no name).
+            $matchedExisting = true;
         }
+
+        $visitorNotes = $notes !== null && $notes !== '' ? $notes : null;
+        $body = match (true) {
+            $visitorNotes === null => "Booked online via /meet/{$link->slug}",
+            $matchedExisting => "Booked online via /meet/{$link->slug} by an unverified visitor ({$fullName}, {$email}). Notes from the visitor: {$visitorNotes}",
+            default => $visitorNotes,
+        };
 
         /** @var Activity $activity */
         $activity = $contact->logActivity(
             type: ActivityType::Meeting,
             title: "{$link->title} with {$contact->full_name}",
-            body: $notes !== null && $notes !== '' ? $notes : "Booked online via /meet/{$link->slug}",
+            body: $body,
             metadata: [
                 'duration_minutes' => $link->duration_minutes,
                 'booking_slug' => $link->slug,

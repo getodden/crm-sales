@@ -30,13 +30,11 @@ class QuoteAcceptanceController extends Controller
         // A quote whose deal has been deleted has nothing to show or to sign.
         abort_if($quote->getRelation('deal') === null, 404);
 
-        // 1. If quote is Draft, transition to Sent upon client opening
-        if ($quote->status === QuoteStatus::Draft) {
-            $quote->updateQuietly(['status' => QuoteStatus::Sent]);
-            $quote->status = QuoteStatus::Sent;
-        }
+        // A draft is not ready for the customer: it is not shown, and opening the link never
+        // changes the quote's status (a staff preview or a link scanner must not make it signable).
+        abort_if($quote->status === QuoteStatus::Draft, 404);
 
-        // 2. Log portal viewing activity on the deal (throttled to once every 2 hours per quote)
+        // Log portal viewing activity on the deal (throttled to once every 2 hours per quote)
         $recentView = $quote->deal->activities()
             ->where('metadata->quote_id', $quote->id)
             ->where('metadata->event', 'portal_view')

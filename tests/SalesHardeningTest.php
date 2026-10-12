@@ -457,7 +457,7 @@ class SalesHardeningTest extends TestCase
         $this->assertEquals(0.00, (float) $deal->fresh()->amount);
     }
 
-    public function test_quote_portal_viewing_transitions_draft_to_sent_and_logs_activity(): void
+    public function test_quote_portal_logs_a_view_for_a_sent_quote(): void
     {
         $user = User::factory()->create();
         $deal = Deal::factory()->create(['owner_id' => $user->id]);
@@ -467,7 +467,7 @@ class SalesHardeningTest extends TestCase
             'deal_id' => $deal->id,
             'quote_number' => 'Q-2026-VIEW',
             'title' => 'Proposal for Widget Corp',
-            'status' => QuoteStatus::Draft,
+            'status' => QuoteStatus::Sent,
             'subtotal' => 12000.00,
             'discount_amount' => 0.00,
             'tax_amount' => 0.00,
@@ -476,10 +476,7 @@ class SalesHardeningTest extends TestCase
             'public_token' => 'view-test-token-777',
         ]);
 
-        $this->assertSame(QuoteStatus::Draft, $quote->status);
-
-        $response = $this->get(route('odden.quotes.show', ['token' => $quote->public_token]));
-        $response->assertOk();
+        $this->get(route('odden.quotes.show', ['token' => $quote->public_token]))->assertOk();
 
         $this->assertSame(QuoteStatus::Sent, $quote->fresh()->status);
 
@@ -491,6 +488,30 @@ class SalesHardeningTest extends TestCase
 
         $this->assertNotNull($viewActivity);
         $this->assertStringContainsString('Proposal Viewed by Customer', $viewActivity->title);
+    }
+
+    public function test_quote_portal_does_not_show_or_send_a_draft_quote(): void
+    {
+        $deal = Deal::factory()->create();
+
+        /** @var Quote $quote */
+        $quote = Quote::create([
+            'deal_id' => $deal->id,
+            'quote_number' => 'Q-2026-DRAFT',
+            'title' => 'Unfinished proposal',
+            'status' => QuoteStatus::Draft,
+            'subtotal' => 100.00,
+            'discount_amount' => 0.00,
+            'tax_amount' => 0.00,
+            'total_amount' => 100.00,
+            'currency' => 'USD',
+            'public_token' => 'draft-test-token-888',
+        ]);
+
+        $this->get(route('odden.quotes.show', ['token' => $quote->public_token]))->assertNotFound();
+
+        $this->assertSame(QuoteStatus::Draft, $quote->fresh()->status);
+        $this->assertSame(0, Activity::query()->where('metadata->event', 'portal_view')->count());
     }
 
     public function test_sales_playbook_execution_on_deal_logs_note_and_syncs_properties(): void

@@ -250,3 +250,41 @@ it('folds every kind of line break in invite text so a name cannot inject ics li
     expect(collect($lines)->filter(fn (string $line): bool => str_starts_with($line, 'ATTENDEE'))->count())->toBe(1);
     expect($ics)->toContain('DESCRIPTION:Agenda\\nX-INJECTED-DESC:1');
 });
+
+it('does not let an unverified visitor change an existing contact', function (): void {
+    $link = ($this->makeLink)();
+    $contact = Contact::query()->create(['email' => 'dana@example.com', 'first_name' => 'Dana']);
+
+    app(BookMeetingAction::class)->execute(
+        $link,
+        'Someone Else',
+        'Dana@Example.com',
+        Carbon::parse('2030-01-07 09:00:00', 'UTC'),
+        '+1 555 0100',
+        'Please call me about the invoice'
+    );
+
+    $contact->refresh();
+    $activity = Activity::query()->where('type', ActivityType::Meeting)->latest('id')->first();
+
+    expect($contact->phone)->toBeNull()
+        ->and($contact->first_name)->toBe('Dana')
+        ->and($activity->body)->toContain('unverified visitor')
+        ->and($activity->body)->toContain('Please call me about the invoice');
+});
+
+it('still records the visitor details on a contact it creates', function (): void {
+    $link = ($this->makeLink)();
+
+    $result = app(BookMeetingAction::class)->execute(
+        $link,
+        'New Person',
+        'new.person@example.com',
+        Carbon::parse('2030-01-07 09:00:00', 'UTC'),
+        '+1 555 0101',
+        'Looking forward to it'
+    );
+
+    expect($result['contact']->phone)->toBe('+1 555 0101')
+        ->and($result['activity']->body)->toBe('Looking forward to it');
+});
