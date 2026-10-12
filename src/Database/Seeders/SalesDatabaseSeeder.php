@@ -215,7 +215,7 @@ class SalesDatabaseSeeder extends Seeder
             ['name' => 'Inbound Enterprise Round Robin'],
             [
                 'strategy' => LeadRoutingStrategy::RoundRobin,
-                'criteria' => ['tier' => 'enterprise'],
+                'criteria' => ['min_amount' => 50000],
                 'assigned_user_ids' => [$repBeth->getKey(), $repMark->getKey()],
                 'sort_order' => 1,
                 'is_active' => true,
@@ -226,7 +226,7 @@ class SalesDatabaseSeeder extends Seeder
             ['name' => 'West Coast Tech Territory'],
             [
                 'strategy' => LeadRoutingStrategy::Territory,
-                'criteria' => ['state' => 'CA'],
+                'criteria' => ['timezone' => 'America/Los_Angeles'],
                 'assigned_user_ids' => [$repBeth->getKey()],
                 'sort_order' => 2,
                 'is_active' => true,
