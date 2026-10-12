@@ -84,6 +84,17 @@ class DealGatewayTest extends TestCase
         $this->assertSame(0, Deal::query()->count());
     }
 
+    public function test_refuses_a_closed_stage_for_an_open_deal(): void
+    {
+        $pipeline = Pipeline::factory()->withStages()->create();
+        $won = $pipeline->stages->where('is_closed_won', true)->firstOrFail();
+        $lost = $pipeline->stages->where('is_closed_lost', true)->firstOrFail();
+
+        $this->assertNull(app(DealGateway::class)->createOpenDeal(Contact::factory()->create(), 'Acme', 5000.0, $pipeline->id, $won->id));
+        $this->assertNull(app(DealGateway::class)->createOpenDeal(Contact::factory()->create(), 'Acme', 5000.0, $pipeline->id, $lost->id));
+        $this->assertSame(0, Deal::query()->count());
+    }
+
     public function test_copies_the_team_and_the_configured_currency(): void
     {
         config(['odden-sales.default_currency' => 'EUR']);

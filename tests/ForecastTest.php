@@ -63,6 +63,42 @@ class ForecastTest extends TestCase
         $this->assertSame(1, $metrics['lost_count']);
         $this->assertSame(50.0, $metrics['win_rate']); // 1 won out of 2 closed = 50%
         $this->assertSame(62500.00, $metrics['average_deal_size']); // 250,000 / 4 = 62,500
+        $this->assertSame(80000.00, $metrics['average_won_deal_size']); // the one won deal
+    }
+
+    public function test_average_won_deal_size_averages_won_deals_in_the_reporting_currency_only(): void
+    {
+        $pipeline = Pipeline::factory()->withStages()->create();
+        $open = $pipeline->stages->where('code', 'discovery')->firstOrFail();
+        $won = $pipeline->stages->where('is_closed_won', true)->firstOrFail();
+        $lost = $pipeline->stages->where('is_closed_lost', true)->firstOrFail();
+
+        Deal::factory()->create(['pipeline_id' => $pipeline->id, 'stage_id' => $open->id, 'amount' => 90000, 'currency' => 'EUR']);
+        Deal::factory()->won()->create(['pipeline_id' => $pipeline->id, 'stage_id' => $won->id, 'amount' => 10000, 'currency' => 'EUR']);
+        Deal::factory()->won()->create(['pipeline_id' => $pipeline->id, 'stage_id' => $won->id, 'amount' => 30000, 'currency' => 'EUR']);
+        Deal::factory()->lost()->create(['pipeline_id' => $pipeline->id, 'stage_id' => $lost->id, 'amount' => 70000, 'currency' => 'EUR']);
+        // Another currency is never mixed into the reporting currency's averages.
+        Deal::factory()->won()->create(['pipeline_id' => $pipeline->id, 'stage_id' => $won->id, 'amount' => 999999, 'currency' => 'USD']);
+
+        $metrics = app(CalculatePipelineForecastAction::class)->execute($pipeline->id, currency: 'EUR');
+
+        $this->assertSame('EUR', $metrics['currency']);
+        $this->assertSame(20000.00, $metrics['average_won_deal_size']); // (10,000 + 30,000) / 2
+        // The existing key keeps its meaning: every deal in the reporting currency, open and lost included.
+        $this->assertSame(50000.00, $metrics['average_deal_size']); // 200,000 / 4
+    }
+
+    public function test_average_won_deal_size_is_zero_without_won_deals(): void
+    {
+        $pipeline = Pipeline::factory()->withStages()->create();
+        $open = $pipeline->stages->where('code', 'discovery')->firstOrFail();
+
+        Deal::factory()->create(['pipeline_id' => $pipeline->id, 'stage_id' => $open->id, 'amount' => 5000]);
+
+        $metrics = app(CalculatePipelineForecastAction::class)->execute($pipeline->id);
+
+        $this->assertSame(0.0, $metrics['average_won_deal_size']);
+        $this->assertSame(5000.00, $metrics['average_deal_size']);
     }
 
     public function test_forecast_can_be_scoped_to_a_team(): void

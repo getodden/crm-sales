@@ -5,8 +5,10 @@ declare(strict_types=1);
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\MailManager;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Odden\Core\Enums\ActivityType;
+use Odden\Core\Events\ContactCreated;
 use Odden\Core\Models\Activity;
 use Odden\Core\Models\Contact;
 use Odden\Sales\Actions\BookMeetingAction;
@@ -287,4 +289,61 @@ it('still records the visitor details on a contact it creates', function (): voi
 
     expect($result['contact']->phone)->toBe('+1 555 0101')
         ->and($result['activity']->body)->toBe('Looking forward to it');
+});
+
+it('creates a new contact through CreateContactAction so ContactCreated fires', function (): void {
+    Event::fake([ContactCreated::class]);
+    $link = ($this->makeLink)();
+
+    $result = app(BookMeetingAction::class)->execute($link, 'New Person', ' New.Person@Example.com', Carbon::parse('2030-01-07 09:00'), '+1 555 0102');
+
+    Event::assertDispatchedTimes(ContactCreated::class, 1);
+    Event::assertDispatched(ContactCreated::class, fn (ContactCreated $event): bool => $event->contact->is($result['contact']));
+
+    expect($result['contact']->email)->toBe('new.person@example.com')
+        ->and($result['contact']->first_name)->toBe('New')
+        ->and($result['contact']->last_name)->toBe('Person')
+        ->and($result['contact']->phone)->toBe('+1 555 0102')
+        ->and($result['contact']->owner_id)->toBe($this->host->id);
+});
+
+it('does not fire ContactCreated when the booking matches an existing contact', function (): void {
+    $link = ($this->makeLink)();
+    Contact::query()->create(['first_name' => 'Dana', 'email' => 'dana@example.com']);
+    Event::fake([ContactCreated::class]);
+
+    app(BookMeetingAction::class)->execute($link, 'Dana Scully', 'DANA@example.com', Carbon::parse('2030-01-07 09:00'));
+
+    Event::assertNotDispatched(ContactCreated::class);
+});
+
+it('creates one contact when the same new address books with two hosts', function (): void {
+    Event::fake([ContactCreated::class]);
+    $first = ($this->makeLink)();
+    $otherHost = User::factory()->create(['email' => 'other@odden.test']);
+    $second = ($this->makeLink)(['user_id' => $otherHost->id]);
+
+    $a = app(BookMeetingAction::class)->execute($first, 'New Person', 'new.person@example.com', Carbon::parse('2030-01-07 09:00'), null, 'First booking');
+    $b = app(BookMeetingAction::class)->execute($second, 'Someone Else', 'New.Person@example.com', Carbon::parse('2030-01-07 09:00'), '+1 555 0199', 'Second booking');
+
+    Event::assertDispatchedTimes(ContactCreated::class, 1);
+
+    expect($b['contact']->id)->toBe($a['contact']->id)
+        ->and(Contact::query()->count())->toBe(1)
+        // The second visitor is unverified: the contact the first booking created is not changed.
+        ->and($a['contact']->refresh()->phone)->toBeNull()
+        ->and($a['contact']->first_name)->toBe('New')
+        ->and($b['activity']->body)->toContain('unverified visitor')
+        ->and($b['activity']->body)->toContain('Second booking');
+});
+
+it('does not create a contact when the slot is not available', function (): void {
+    Event::fake([ContactCreated::class]);
+    $link = ($this->makeLink)();
+
+    expect(fn () => app(BookMeetingAction::class)->execute($link, 'New Person', 'new.person@example.com', Carbon::parse('2030-01-07 14:00')))
+        ->toThrow(MeetingSlotUnavailableException::class);
+
+    Event::assertNotDispatched(ContactCreated::class);
+    expect(Contact::query()->count())->toBe(0);
 });

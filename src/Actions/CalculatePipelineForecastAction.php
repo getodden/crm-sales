@@ -34,6 +34,7 @@ class CalculatePipelineForecastAction
      *     lost_count: int,
      *     win_rate: float,
      *     average_deal_size: float,
+     *     average_won_deal_size: float,
      *     lost_reasons: array<string, int>,
      *     stale_deals_count: int
      * }
@@ -88,8 +89,11 @@ class CalculatePipelineForecastAction
         $closedCount = $wonCount + $lostCount;
         $winRate = $closedCount > 0 ? round(($wonCount / $closedCount) * 100, 1) : 0.0;
 
-        // 5. Average deal size
+        // 5. Average deal size. `average_deal_size` keeps its original meaning (every deal in the
+        // reporting currency: open, won and lost) for compatibility; `average_won_deal_size` is the
+        // average of won deals only, which is what "average deal size" usually means in sales reporting.
         $averageDealSize = (float) ($baseQuery->avg("{$dealsTable}.amount") ?? 0.0);
+        $averageWonDealSize = $wonCount > 0 ? $wonValue / $wonCount : 0.0;
 
         // 6. Lost reasons breakdown, counted in the database; most frequent first
         $lostReasons = [];
@@ -125,6 +129,7 @@ class CalculatePipelineForecastAction
             'lost_count' => $lostCount,
             'win_rate' => $winRate,
             'average_deal_size' => round($averageDealSize, 2),
+            'average_won_deal_size' => round($averageWonDealSize, 2),
             'lost_reasons' => $lostReasons,
             'stale_deals_count' => $staleCount,
         ];

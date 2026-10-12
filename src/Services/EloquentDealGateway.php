@@ -21,7 +21,8 @@ class EloquentDealGateway implements DealGateway
 {
     /**
      * With no $pipelineId the default active pipeline is used (or, if none is marked default, the first active
-     * one), and with no $stageId the pipeline's first open stage. A $stageId outside the pipeline is not used.
+     * one), and with no $stageId the pipeline's first open stage. A $stageId outside the pipeline, or a closed
+     * (won or lost) stage, is not used: the deal is created open, so it cannot start in a closed stage.
      */
     public function createOpenDeal(
         Contact $contact,
@@ -41,7 +42,7 @@ class EloquentDealGateway implements DealGateway
         }
 
         $stage = $stageId !== null
-            ? $pipeline->stages()->whereKey($stageId)->first()
+            ? $pipeline->stages()->whereKey($stageId)->where('is_closed_won', false)->where('is_closed_lost', false)->first()
             : $pipeline->defaultStage();
 
         if ($stage === null) {
