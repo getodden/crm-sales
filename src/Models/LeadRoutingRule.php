@@ -6,6 +6,7 @@ namespace Odden\Sales\Models;
 
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
+use InvalidArgumentException;
 use Odden\Sales\Enums\LeadRoutingStrategy;
 
 /**
@@ -22,6 +23,13 @@ use Odden\Sales\Enums\LeadRoutingStrategy;
  */
 class LeadRoutingRule extends Model
 {
+    /**
+     * The criteria keys each kind of lead can be matched on. A criterion a lead's kind doesn't have never matches.
+     */
+    public const CONTACT_CRITERIA = ['lead_status', 'timezone', 'city'];
+
+    public const DEAL_CRITERIA = ['pipeline_id', 'min_amount'];
+
     /**
      * The attributes that are mass assignable.
      *
@@ -45,6 +53,31 @@ class LeadRoutingRule extends Model
     protected $attributes = [
         'last_assigned_index' => -1,
     ];
+
+    /**
+     * Bootstrap the model and its events.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $rule): void {
+            $unsupported = self::unsupportedCriteria($rule->criteria ?? []);
+
+            if ($unsupported !== []) {
+                throw new InvalidArgumentException('Lead routing rules cannot match on: '.implode(', ', $unsupported).'. Supported criteria: '.implode(', ', [...self::CONTACT_CRITERIA, ...self::DEAL_CRITERIA]).'.');
+            }
+        });
+    }
+
+    /**
+     * The keys in $criteria that no kind of lead can be matched on.
+     *
+     * @param  array<array-key, mixed>  $criteria
+     * @return list<string>
+     */
+    public static function unsupportedCriteria(array $criteria): array
+    {
+        return array_values(array_diff(array_map('strval', array_keys($criteria)), [...self::CONTACT_CRITERIA, ...self::DEAL_CRITERIA]));
+    }
 
     /**
      * Get the table associated with the model.

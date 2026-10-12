@@ -109,14 +109,19 @@ class RouteLeadAction
     }
 
     /**
-     * Select user with the lowest quota attainment / largest gap in the current period.
+     * Select the rep with the lowest quota attainment in the current period.
+     *
+     * Reps without a current quota are left out: counting them as 0% would send them every lead. Reps on the same
+     * attainment (everyone on the first day of a period, say) take turns, as in round robin. When nobody in the pool
+     * has a quota there is nothing to weigh, so the whole pool takes turns.
      *
      * @param  list<int>  $pool
      */
     protected function selectQuotaWeightedUser(LeadRoutingRule $rule, array $pool): int
     {
+        $pool = array_values($pool);
         $now = now();
-        $candidates = [];
+        $attainment = [];
 
         foreach ($pool as $index => $userId) {
             /** @var SalesQuota|null $quota */
@@ -128,40 +133,24 @@ class RouteLeadAction
                 ->first();
 
             if ($quota !== null) {
-                $metrics = app(CalculateQuotaAttainmentAction::class)->execute($quota);
-                $attainment = $metrics['attainment_percent'];
-                $gap = $metrics['gap_to_target'];
-            } else {
-                $attainment = 0.0;
-                $gap = 0.0;
+                $attainment[$index] = round((float) app(CalculateQuotaAttainmentAction::class)->execute($quota)['attainment_percent'], 2);
             }
-
-            $candidates[] = [
-                'user_id' => (int) $userId,
-                'attainment' => $attainment,
-                'gap' => $gap,
-                'index' => $index,
-            ];
         }
 
-        usort($candidates, function (array $a, array $b): int {
-            if ($a['attainment'] !== $b['attainment']) {
-                return $a['attainment'] <=> $b['attainment'];
-            }
-            if ($a['gap'] !== $b['gap']) {
-                return $b['gap'] <=> $a['gap'];
-            }
+        $eligible = $attainment === [] ? array_keys($pool) : array_keys($attainment, min($attainment), true);
 
-            return $a['index'] <=> $b['index'];
+        // The turn pointer is read and advanced under a row lock, as in round robin.
+        return DB::transaction(function () use ($rule, $pool, $eligible): int {
+            $locked = LeadRoutingRule::query()->whereKey($rule->getKey())->lockForUpdate()->first() ?? $rule;
+
+            $after = array_values(array_filter($eligible, fn (int $index): bool => $index > $locked->last_assigned_index));
+            $chosen = $after[0] ?? $eligible[0];
+
+            $locked->update(['last_assigned_index' => $chosen]);
+            $rule->last_assigned_index = $chosen;
+
+            return (int) $pool[$chosen];
         });
-
-        $chosen = $candidates[0];
-
-        $rule->update([
-            'last_assigned_index' => $chosen['index'],
-        ]);
-
-        return $chosen['user_id'];
     }
 
     /**
@@ -171,7 +160,14 @@ class RouteLeadAction
      */
     protected function matchesCriteria(Contact|Deal $target, array $criteria): bool
     {
+        $supported = $target instanceof Contact ? LeadRoutingRule::CONTACT_CRITERIA : LeadRoutingRule::DEAL_CRITERIA;
+
         foreach ($criteria as $key => $expected) {
+            // A criterion this kind of lead doesn't have can't be met: skipping it would match every lead.
+            if (! in_array($key, $supported, true)) {
+                return false;
+            }
+
             if ($target instanceof Contact) {
                 if ($key === 'lead_status' && $target->lead_status->value !== $expected) {
                     return false;
@@ -182,7 +178,7 @@ class RouteLeadAction
                 if ($key === 'city' && $target->companies->first()?->getProperty('city') !== $expected) {
                     return false;
                 }
-            } elseif ($target instanceof Deal) {
+            } else {
                 if ($key === 'pipeline_id' && (int) $target->pipeline_id !== (int) $expected) {
                     return false;
                 }
