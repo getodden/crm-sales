@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Odden\Sales\Enums\DealStatus;
 use Odden\Sales\Models\Deal;
+use Odden\Sales\Support\Money;
 
 class CalculatePipelineForecastAction
 {
@@ -18,8 +19,14 @@ class CalculatePipelineForecastAction
      * `$visibleDeals` limits the figures to deals in the given query (for example the deals a panel
      * user may see); without it every deal is counted.
      *
+     * Amounts are never added across currencies. The figures cover one currency, `currency` in the
+     * result: `$currency` when given, otherwise the default currency (or, when no deal uses it, the
+     * most-used one). Deals in any other currency are listed separately under `other_currencies`.
+     *
      * @param  Builder<covariant Model>|null  $visibleDeals
      * @return array{
+     *     currency: string,
+     *     other_currencies: array<string, array{open_count: int, open_value: float, won_count: int, won_value: float, lost_count: int}>,
      *     open_value: float,
      *     open_count: int,
      *     weighted_forecast: float,
@@ -32,7 +39,7 @@ class CalculatePipelineForecastAction
      *     stale_deals_count: int
      * }
      */
-    public function execute(?int $pipelineId = null, ?int $teamId = null, ?Builder $visibleDeals = null): array
+    public function execute(?int $pipelineId = null, ?int $teamId = null, ?Builder $visibleDeals = null, ?string $currency = null): array
     {
         $dealsTable = config('odden-sales.tables.deals', 'odden_deals');
         $stagesTable = config('odden-sales.tables.stages', 'odden_pipeline_stages');
@@ -47,6 +54,13 @@ class CalculatePipelineForecastAction
         if ($teamId !== null) {
             $baseQuery->where("{$dealsTable}.team_id", $teamId);
         }
+
+        $currency = $currency !== null && trim($currency) !== ''
+            ? strtoupper(trim($currency))
+            : Money::reportingCurrency($baseQuery, "{$dealsTable}.currency");
+
+        $otherCurrencies = $this->otherCurrencies(clone $baseQuery, $currency, $dealsTable);
+        $baseQuery->where("{$dealsTable}.currency", $currency);
 
         // 1. Open deals and value
         $openQuery = (clone $baseQuery)->where("{$dealsTable}.status", DealStatus::Open->value);
@@ -96,6 +110,8 @@ class CalculatePipelineForecastAction
         }
 
         return [
+            'currency' => $currency,
+            'other_currencies' => $otherCurrencies,
             'open_value' => round($openValue, 2),
             'open_count' => $openCount,
             'weighted_forecast' => round($weightedForecast, 2),
@@ -107,5 +123,42 @@ class CalculatePipelineForecastAction
             'lost_reasons' => $lostReasons,
             'stale_deals_count' => $staleCount,
         ];
+    }
+
+    /**
+     * Counts and values of deals not in the reporting currency, per currency.
+     *
+     * @param  Builder<Deal>  $query
+     * @return array<string, array{open_count: int, open_value: float, won_count: int, won_value: float, lost_count: int}>
+     */
+    protected function otherCurrencies(Builder $query, string $currency, string $dealsTable): array
+    {
+        $rows = $query
+            ->where("{$dealsTable}.currency", '!=', $currency)
+            ->reorder()
+            ->toBase()
+            ->select(["{$dealsTable}.currency as currency", "{$dealsTable}.status as status"])
+            ->selectRaw('count(*) as deal_count, sum(amount) as deal_amount')
+            ->groupBy("{$dealsTable}.currency", "{$dealsTable}.status")
+            ->get();
+
+        $result = [];
+
+        foreach ($rows as $row) {
+            $code = strtoupper(trim((string) $row->currency));
+            $result[$code] ??= ['open_count' => 0, 'open_value' => 0.0, 'won_count' => 0, 'won_value' => 0.0, 'lost_count' => 0];
+            $status = (string) $row->status;
+
+            match ($status) {
+                DealStatus::Open->value => $result[$code] = [...$result[$code], 'open_count' => (int) $row->deal_count, 'open_value' => round((float) $row->deal_amount, 2)],
+                DealStatus::Won->value => $result[$code] = [...$result[$code], 'won_count' => (int) $row->deal_count, 'won_value' => round((float) $row->deal_amount, 2)],
+                DealStatus::Lost->value => $result[$code] = [...$result[$code], 'lost_count' => (int) $row->deal_count],
+                default => null,
+            };
+        }
+
+        ksort($result);
+
+        return $result;
     }
 }
