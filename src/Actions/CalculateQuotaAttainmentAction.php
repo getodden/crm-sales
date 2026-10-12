@@ -6,13 +6,19 @@ namespace Odden\Sales\Actions;
 
 use Odden\Sales\Models\Deal;
 use Odden\Sales\Models\SalesQuota;
+use Odden\Sales\Support\Money;
 
 class CalculateQuotaAttainmentAction
 {
     /**
      * Calculate quota attainment, pacing, and pipeline coverage.
      *
+     * Only deals in the quota's currency count: amounts in other currencies cannot be compared with the
+     * target, and are reported as `excluded_deal_count` instead.
+     *
      * @return array{
+     *     currency: string,
+     *     excluded_deal_count: int,
      *     target_amount: float,
      *     won_amount: float,
      *     attainment_percent: float,
@@ -35,6 +41,22 @@ class CalculateQuotaAttainmentAction
         if ($teamId !== null) {
             $dealsQuery->where("{$dealsTable}.team_id", $teamId);
         }
+
+        $currency = strtoupper(trim((string) $quota->currency)) !== ''
+            ? strtoupper(trim((string) $quota->currency))
+            : Money::defaultCurrency();
+
+        $excluded = (clone $dealsQuery)
+            ->where("{$dealsTable}.currency", '!=', $currency)
+            ->where(function ($q) use ($dealsTable, $quota): void {
+                $q->where(fn ($won) => $won->where("{$dealsTable}.status", 'won')
+                    ->whereBetween("{$dealsTable}.closed_at", [$quota->period_start->startOfDay(), $quota->period_end->endOfDay()]))
+                    ->orWhere(fn ($open) => $open->where("{$dealsTable}.status", 'open')
+                        ->whereBetween("{$dealsTable}.expected_close_date", [$quota->period_start, $quota->period_end]));
+            })
+            ->count();
+
+        $dealsQuery->where("{$dealsTable}.currency", $currency);
 
         // Won deals closed within the quota period
         $wonAmount = (float) (clone $dealsQuery)
@@ -60,6 +82,8 @@ class CalculateQuotaAttainmentAction
         $coverageRatio = $target > 0 ? round(($wonAmount + $openPipelineAmount) / $target, 2) : 0.0;
 
         return [
+            'currency' => $currency,
+            'excluded_deal_count' => $excluded,
             'target_amount' => round($target, 2),
             'won_amount' => round($wonAmount, 2),
             'attainment_percent' => $attainmentPercent,
