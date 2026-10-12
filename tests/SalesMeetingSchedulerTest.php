@@ -6,6 +6,7 @@ namespace Odden\Sales\Tests;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Odden\Core\Enums\ActivityType;
 use Odden\Core\Models\Contact;
 use Odden\Sales\Models\SalesMeetingBooking;
@@ -93,7 +94,7 @@ class SalesMeetingSchedulerTest extends TestCase
         foreach (range(0, 9) as $day) {
             $start = now('UTC')->startOfDay()->addDays($day)->setTime(9, 0);
             SalesMeetingBooking::query()->create([
-                'uid' => "busy-{$day}",
+                'uid' => (string) Str::uuid(),
                 'meeting_link_id' => $link->id,
                 'user_id' => $user->id,
                 'invitee_name' => 'Busy',

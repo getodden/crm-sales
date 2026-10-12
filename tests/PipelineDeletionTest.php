@@ -78,7 +78,8 @@ class PipelineDeletionTest extends TestCase
         Deal::factory()->create(['pipeline_id' => $pipeline->id, 'stage_id' => $stage->id]);
 
         try {
-            DB::table((new PipelineStage)->getTable())->where('id', $stage->id)->delete();
+            // In a savepoint, so PostgreSQL can carry on after the refused statement.
+            DB::transaction(fn () => DB::table((new PipelineStage)->getTable())->where('id', $stage->id)->delete());
             $this->fail('The stage was deleted.');
         } catch (QueryException) {
         }

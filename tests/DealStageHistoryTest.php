@@ -87,6 +87,17 @@ class DealStageHistoryTest extends TestCase
         $this->assertSame(3 * 86400, $first->duration_in_stage_seconds);
     }
 
+    public function test_the_first_stage_stay_is_never_negative(): void
+    {
+        $pipeline = Pipeline::factory()->withStages()->create();
+        $deal = Deal::factory()->create(['pipeline_id' => $pipeline->id, 'stage_id' => $pipeline->stages[0]->id, 'created_at' => now()->addSeconds(30)]);
+
+        $deal->moveToStage($pipeline->stages[1]);
+
+        $first = DealStageHistory::query()->where('deal_id', $deal->id)->where('to_stage_id', $pipeline->stages[0]->id)->sole();
+        $this->assertSame(0, $first->duration_in_stage_seconds);
+    }
+
     public function test_moving_the_same_deal_object_back_and_forth_reads_the_current_stage(): void
     {
         $pipeline = Pipeline::factory()->withStages()->create();

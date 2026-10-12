@@ -69,7 +69,7 @@ class ChangeDealStageAction
             } elseif (! DealStageHistory::query()->where('deal_id', $deal->id)->exists()) {
                 // A deal created without a first history row (outside the panel): it has been in its stage since it
                 // was created, so record that stay rather than leaving the first stage's dwell time out.
-                $enteredAt = $deal->created_at ?? $now;
+                $enteredAt = $deal->created_at !== null && $deal->created_at->lt($now) ? $deal->created_at : $now;
                 DealStageHistory::create([
                     'deal_id' => $deal->id,
                     'from_stage_id' => null,
