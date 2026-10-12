@@ -38,7 +38,7 @@ class ChangeDealStageAction
             $deal->syncOriginalAttributes(self::STAGE_ATTRIBUTES);
 
             /** @var PipelineStage $fromStage */
-            $fromStage = $deal->relationLoaded('stage') && $deal->stage?->id === $locked->stage_id
+            $fromStage = $deal->relationLoaded('stage') && $deal->stage->id === $locked->stage_id
                 ? $deal->stage
                 : $locked->stage;
             $deal->setRelation('stage', $fromStage);

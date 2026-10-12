@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Odden\Sales\Actions;
 
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Odden\Sales\Enums\DealStatus;
 use Odden\Sales\Models\Deal;
@@ -67,15 +66,15 @@ class CalculatePipelineForecastAction
         $openCount = $openQuery->count();
         $openValue = (float) $openQuery->sum("{$dealsTable}.amount");
 
-        // 2. Weighted forecast value based on stage win probability
-        $openDeals = (clone $baseQuery)
-            ->where('status', DealStatus::Open->value)
-            ->with(['stage', 'stageHistory'])
-            ->get();
-
-        $weightedForecast = (float) $openDeals->sum(
-            fn (Deal $deal): float => (float) $deal->amount * (($deal->stage->probability ?? 0) / 100.0)
-        );
+        // 2. Weighted forecast value based on stage win probability, summed in the database
+        $weighted = (clone $openQuery)
+            ->join($stagesTable, "{$stagesTable}.id", '=', "{$dealsTable}.stage_id")
+            ->reorder()
+            ->toBase()
+            // amount is only on deals and probability only on stages, so neither needs its table name.
+            ->selectRaw('sum(amount * probability) as weighted')
+            ->first();
+        $weightedForecast = (float) ($weighted->weighted ?? 0) / 100.0;
 
         // 3. Won deals
         $wonQuery = (clone $baseQuery)->where("{$dealsTable}.status", DealStatus::Won->value);
@@ -92,22 +91,28 @@ class CalculatePipelineForecastAction
         // 5. Average deal size
         $averageDealSize = (float) ($baseQuery->avg("{$dealsTable}.amount") ?? 0.0);
 
-        // 6. Lost reasons breakdown
+        // 6. Lost reasons breakdown, counted in the database; most frequent first
         $lostReasons = [];
-        /** @var Collection<int, Deal> $lostDeals */
-        $lostDeals = (clone $baseQuery)->where("{$dealsTable}.status", DealStatus::Lost->value)->get();
-        foreach ($lostDeals as $lostDeal) {
-            $reason = $lostDeal->lost_reason ?: 'unspecified';
-            $lostReasons[$reason] = ($lostReasons[$reason] ?? 0) + 1;
+        $reasonRows = (clone $lostQuery)
+            ->reorder()
+            ->toBase()
+            ->select("{$dealsTable}.lost_reason as reason")
+            ->selectRaw('count(*) as deal_count')
+            ->groupBy("{$dealsTable}.lost_reason")
+            ->get();
+        foreach ($reasonRows as $row) {
+            $reason = (string) $row->reason !== '' ? (string) $row->reason : 'unspecified';
+            $lostReasons[$reason] = ($lostReasons[$reason] ?? 0) + (int) $row->deal_count;
         }
+        uksort($lostReasons, fn (string $a, string $b): int => [$lostReasons[$b], $a] <=> [$lostReasons[$a], $b]);
 
-        // 7. Stale deals count
-        $staleCount = 0;
-        foreach ($openDeals as $openDeal) {
-            if ($openDeal->isRotten()) {
-                $staleCount++;
-            }
-        }
+        // 7. Stale deals count: only open deals in stages that go stale can be stale, so only those are loaded
+        $staleCount = (clone $openQuery)
+            ->whereHas('stage', fn ($stage) => $stage->where('rot_after_days', '>', 0))
+            ->with(['stage', 'stageHistory'])
+            ->get()
+            ->filter(fn (Deal $deal): bool => $deal->isRotten())
+            ->count();
 
         return [
             'currency' => $currency,

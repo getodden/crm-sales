@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Odden\Sales\Tests;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Odden\Sales\Actions\CalculateStageVelocityAction;
 use Odden\Sales\Models\Deal;
 use Odden\Sales\Models\Pipeline;
@@ -57,5 +58,29 @@ class StageVelocityTest extends TestCase
         $this->assertSame(3, $action->execute($pipeline->id)['stages'][$leadStage->id]['stale_deal_count']);
         $this->assertSame(1, $action->execute($pipeline->id, 1)['stages'][$leadStage->id]['stale_deal_count']);
         $this->assertSame(2, $action->execute($pipeline->id, 2)['stages'][$leadStage->id]['stale_deal_count']);
+    }
+
+    public function test_the_number_of_queries_does_not_grow_with_the_deals(): void
+    {
+        $pipeline = Pipeline::factory()->withStages()->create();
+        $stages = $pipeline->stages()->get();
+        $stages[0]->update(['rot_after_days' => 5]);
+        $stages[1]->update(['rot_after_days' => 5]);
+
+        $queries = function (int $deals) use ($pipeline, $stages): int {
+            foreach (range(1, $deals) as $i) {
+                $deal = Deal::factory()->create(['pipeline_id' => $pipeline->id, 'stage_id' => $stages[0]->id]);
+                $deal->moveToStage($stages[1]);
+            }
+
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            (new CalculateStageVelocityAction)->execute($pipeline->id);
+            DB::disableQueryLog();
+
+            return count(DB::getQueryLog());
+        };
+
+        $this->assertSame($queries(1), $queries(5));
     }
 }

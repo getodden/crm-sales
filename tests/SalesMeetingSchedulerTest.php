@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Odden\Sales\Tests;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Odden\Core\Enums\ActivityType;
 use Odden\Core\Models\Contact;
+use Odden\Sales\Models\SalesMeetingBooking;
 use Odden\Sales\Models\SalesMeetingLink;
 use Odden\Sales\Services\MeetingAvailability;
 use Odden\Sales\Tests\Fixtures\User;
@@ -71,5 +73,41 @@ class SalesMeetingSchedulerTest extends TestCase
             'type' => ActivityType::Meeting->value,
             'title' => 'Product Demo Call with Clark Kent',
         ]);
+    }
+
+    public function test_finding_the_first_open_day_reads_the_bookings_once(): void
+    {
+        $this->travelTo(now('UTC')->startOfDay()->setTime(6, 0));
+        $user = User::factory()->create();
+        $link = SalesMeetingLink::query()->create([
+            'user_id' => $user->id,
+            'slug' => 'one-slot-a-day',
+            'title' => 'Daily slot',
+            'duration_minutes' => 60,
+            'timezone' => 'UTC',
+            'working_hours' => array_fill_keys(MeetingAvailability::DAYS, ['09:00-10:00']),
+            'is_active' => true,
+        ]);
+
+        // The next ten days are fully booked.
+        foreach (range(0, 9) as $day) {
+            $start = now('UTC')->startOfDay()->addDays($day)->setTime(9, 0);
+            SalesMeetingBooking::query()->create([
+                'uid' => "busy-{$day}",
+                'meeting_link_id' => $link->id,
+                'user_id' => $user->id,
+                'invitee_name' => 'Busy',
+                'invitee_email' => "busy{$day}@example.com",
+                'starts_at' => $start,
+                'ends_at' => $start->copy()->addHour(),
+                'timezone' => 'UTC',
+            ]);
+        }
+
+        DB::enableQueryLog();
+        $first = app(MeetingAvailability::class)->firstAvailableDate($link);
+
+        $this->assertSame(now('UTC')->addDays(10)->toDateString(), $first);
+        $this->assertCount(1, DB::getQueryLog());
     }
 }

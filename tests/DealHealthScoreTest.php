@@ -71,4 +71,16 @@ class DealHealthScoreTest extends TestCase
         $this->assertContains('Deal Rotting', array_column($health['factors'], 'name'));
         $this->assertNotEmpty($health['recommendations']);
     }
+
+    public function test_a_close_date_of_today_has_not_expired(): void
+    {
+        $factors = fn (Deal $deal): array => array_column((new CalculateDealHealthScoreAction)->execute($deal)['factors'], 'name');
+
+        $this->travelTo(now()->setTime(15, 0));
+        $today = Deal::factory()->create(['expected_close_date' => today()]);
+        $yesterday = Deal::factory()->create(['expected_close_date' => today()->subDay()]);
+
+        $this->assertNotContains('Close Date Expired', $factors($today->fresh()));
+        $this->assertContains('Close Date Expired', $factors($yesterday->fresh()));
+    }
 }

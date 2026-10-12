@@ -38,18 +38,21 @@ class CalculateStageVelocityAction
 
         $stageMetrics = [];
 
-        foreach ($stages as $stage) {
-            /** @var float|null $avgSeconds */
-            $avgSeconds = DealStageHistory::query()
-                ->where('to_stage_id', $stage->id)
-                ->when($teamId !== null, fn ($query) => $query->whereHas('deal', fn ($deal) => $deal->forTeam((int) $teamId)))
-                ->whereNotNull('duration_in_stage_seconds')
-                ->avg('duration_in_stage_seconds');
+        // Dwell time and transitions for every stage in one grouped query (avg() leaves out rows still in the stage).
+        $historyStats = DealStageHistory::query()
+            ->whereIn('to_stage_id', $stages->modelKeys())
+            ->when($teamId !== null, fn ($query) => $query->whereHas('deal', fn ($deal) => $deal->forTeam((int) $teamId)))
+            ->toBase()
+            ->select('to_stage_id')
+            ->selectRaw('count(*) as transition_count, avg(duration_in_stage_seconds) as average_seconds')
+            ->groupBy('to_stage_id')
+            ->get()
+            ->keyBy(fn (object $row): int => (int) $row->to_stage_id);
 
-            $count = DealStageHistory::query()
-                ->where('to_stage_id', $stage->id)
-                ->when($teamId !== null, fn ($query) => $query->whereHas('deal', fn ($deal) => $deal->forTeam((int) $teamId)))
-                ->count();
+        foreach ($stages as $stage) {
+            $stats = $historyStats->get($stage->id);
+            $avgSeconds = $stats?->average_seconds !== null ? (float) $stats->average_seconds : null;
+            $count = (int) ($stats->transition_count ?? 0);
 
             // Count open deals that have exceeded rot_after_days (stale deals)
             $staleCount = 0;
@@ -57,6 +60,7 @@ class CalculateStageVelocityAction
                 /** @var Collection<int, Deal> $activeDeals */
                 $activeDeals = $stage->deals()->where('status', 'open')
                     ->when($teamId !== null, fn ($query) => $query->forTeam((int) $teamId))
+                    ->with('stageHistory')
                     ->get();
                 foreach ($activeDeals as $deal) {
                     if ($deal->daysInCurrentStage() >= $stage->rot_after_days) {

@@ -176,7 +176,8 @@ class CalculateDealHealthScoreAction
 
         // 5. Expected Close Date
         if ($deal->expected_close_date !== null) {
-            if ($deal->expected_close_date->isPast()) {
+            // A date cast is midnight, so isPast() would already call today's close date expired.
+            if ($deal->expected_close_date->lt(today())) {
                 $score -= 15;
                 $factors[] = [
                     'name' => 'Close Date Expired',

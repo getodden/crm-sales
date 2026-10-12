@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Odden\Sales\Tests;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Odden\Sales\Actions\CalculatePipelineForecastAction;
 use Odden\Sales\Models\Deal;
 use Odden\Sales\Models\Pipeline;
@@ -82,5 +83,40 @@ class ForecastTest extends TestCase
         $this->assertSame(5000.0, $team2['open_value']);
         $this->assertArrayHasKey('lost_reasons', $team1);
         $this->assertArrayHasKey('stale_deals_count', $team1);
+    }
+
+    public function test_lost_reasons_are_counted_most_frequent_first(): void
+    {
+        $pipeline = Pipeline::factory()->withStages()->create();
+        $lost = $pipeline->stages->firstWhere('is_closed_lost', true);
+        foreach (['timing', 'price', 'price', null, ''] as $reason) {
+            Deal::factory()->lost()->create(['pipeline_id' => $pipeline->id, 'stage_id' => $lost->id, 'lost_reason' => $reason]);
+        }
+
+        $reasons = (new CalculatePipelineForecastAction)->execute($pipeline->id)['lost_reasons'];
+
+        $this->assertSame(['price' => 2, 'unspecified' => 2, 'timing' => 1], $reasons);
+    }
+
+    public function test_only_deals_that_can_go_stale_are_loaded(): void
+    {
+        $pipeline = Pipeline::factory()->withStages()->create();
+        [$rotting, $other] = [$pipeline->stages[0], $pipeline->stages[1]];
+        $rotting->update(['rot_after_days' => 5]);
+        $lost = $pipeline->stages->firstWhere('is_closed_lost', true);
+
+        Deal::factory()->create(['pipeline_id' => $pipeline->id, 'stage_id' => $rotting->id, 'created_at' => now()->subDays(10)]);
+        Deal::factory()->count(3)->create(['pipeline_id' => $pipeline->id, 'stage_id' => $other->id]);
+        Deal::factory()->lost()->count(3)->create(['pipeline_id' => $pipeline->id, 'stage_id' => $lost->id]);
+
+        $loaded = 0;
+        Event::listen('eloquent.retrieved: '.Deal::class, function () use (&$loaded): void {
+            $loaded++;
+        });
+
+        $metrics = (new CalculatePipelineForecastAction)->execute($pipeline->id);
+
+        $this->assertSame(1, $metrics['stale_deals_count']);
+        $this->assertSame(1, $loaded);
     }
 }

@@ -62,9 +62,10 @@ class MeetingAvailability
      * Open slot start times on a date, in the link's timezone, earliest first.
      *
      * @param  CarbonInterface|string  $date  A Y-m-d date in the link's timezone (a Carbon instance's own date is used).
+     * @param  list<array{0: int, 1: int}>|null  $busy  The host's bookings covering that day, when already loaded.
      * @return list<CarbonImmutable>
      */
-    public function slotsFor(SalesMeetingLink $link, CarbonInterface|string $date): array
+    public function slotsFor(SalesMeetingLink $link, CarbonInterface|string $date, ?array $busy = null): array
     {
         $timezone = $link->timezoneName();
         $dateString = $date instanceof CarbonInterface ? $date->format('Y-m-d') : $date;
@@ -110,7 +111,7 @@ class MeetingAvailability
         }
 
         ksort($candidates);
-        $busy = $this->busyPeriods($link, $day->subMinutes($buffer), $day->addDay()->addMinutes($buffer));
+        $busy ??= $this->busyPeriods($link, $day->subMinutes($buffer), $day->addDay()->addMinutes($buffer));
 
         $open = [];
 
@@ -153,8 +154,12 @@ class MeetingAvailability
         $date = CarbonImmutable::now($link->timezoneName())->startOfDay();
         $last = $this->lastBookableDate($link);
 
+        // The host's bookings over the whole window in one query, rather than one query per day.
+        $buffer = max(0, $link->buffer_minutes);
+        $busy = $this->busyPeriods($link, $date->subMinutes($buffer), $last->addDay()->addMinutes($buffer));
+
         while ($date->lte($last)) {
-            if ($this->slotsFor($link, $date->format('Y-m-d')) !== []) {
+            if ($this->slotsFor($link, $date->format('Y-m-d'), $busy) !== []) {
                 return $date->format('Y-m-d');
             }
 

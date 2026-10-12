@@ -119,7 +119,6 @@ class RouteLeadAction
      */
     protected function selectQuotaWeightedUser(LeadRoutingRule $rule, array $pool): int
     {
-        $pool = array_values($pool);
         $now = now();
         $attainment = [];
 
