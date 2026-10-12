@@ -4,29 +4,145 @@ declare(strict_types=1);
 
 namespace Odden\Sales\Actions;
 
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphOne;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Odden\Core\Models\Activity;
 use Odden\Sales\Enums\DealStatus;
 use Odden\Sales\Enums\QuoteStatus;
 use Odden\Sales\Models\Deal;
+use Odden\Sales\Models\DealStageHistory;
 use Odden\Sales\Models\Quote;
 
+/**
+ * @phpstan-type DealHealthScore array{
+ *     score: int,
+ *     status: 'strong'|'moderate'|'at_risk'|'stalled',
+ *     badge_label: string,
+ *     badge_color: string,
+ *     factors: list<array{name: string, points: int, positive: bool, description: string}>,
+ *     recommendations: list<string>
+ * }
+ */
 class CalculateDealHealthScoreAction
 {
     /**
      * Calculate an algorithmic health and win-probability score (0-100) for a deal.
      *
-     * @return array{
-     *     score: int,
-     *     status: 'strong'|'moderate'|'at_risk'|'stalled',
-     *     badge_label: string,
-     *     badge_color: string,
-     *     factors: list<array{name: string, points: int, positive: bool, description: string}>,
-     *     recommendations: list<string>
-     * }
+     * @return DealHealthScore
      */
     public function execute(Deal $deal): array
     {
-        if ($deal->status === DealStatus::Won) {
+        return $this->scoreAll(new EloquentCollection([$deal]))[0];
+    }
+
+    /**
+     * Score many deals at once (a table page, a Kanban board): what the scores read is loaded in a fixed number of
+     * queries whatever the number of deals, and each score is the same as execute() returns for that deal.
+     *
+     * @param  iterable<Deal>  $deals
+     * @return array<int|string, DealHealthScore> keyed by deal id
+     */
+    public function executeMany(iterable $deals): array
+    {
+        $collection = new EloquentCollection;
+        foreach ($deals as $deal) {
+            $collection->push($deal);
+        }
+
+        $all = $this->scoreAll($collection);
+
+        $scores = [];
+        foreach ($collection->values() as $i => $deal) {
+            $scores[$deal->getKey()] = $all[$i];
+        }
+
+        return $scores;
+    }
+
+    /**
+     * @param  EloquentCollection<int, Deal>  $deals
+     * @return list<DealHealthScore> in the order of $deals
+     */
+    private function scoreAll(EloquentCollection $deals): array
+    {
+        $deals = $deals->values();
+
+        if ($deals->isEmpty()) {
+            return [];
+        }
+
+        // Closed deals score without reading anything.
+        $open = $deals->filter(fn (Deal $deal): bool => $deal->status !== DealStatus::Won && $deal->status !== DealStatus::Lost);
+        $saved = $open->filter(fn (Deal $deal): bool => $deal->exists)->values();
+
+        $contactCounts = [];
+        $latestActivities = [];
+        $latestQuotes = [];
+        $latestHistories = [];
+
+        if ($open->isNotEmpty()) {
+            $open->loadMissing('stage');
+        }
+
+        if ($saved->isNotEmpty()) {
+            $template = new Deal;
+
+            $contactCounts = Deal::query()
+                ->withoutGlobalScopes()
+                ->select($template->getQualifiedKeyName())
+                ->whereKey($saved->modelKeys())
+                ->withCount('contacts')
+                ->toBase()
+                ->get()
+                ->mapWithKeys(fn (object $row): array => [(string) $row->{$template->getKeyName()} => (int) $row->contacts_count])
+                ->all();
+
+            /** @var MorphOne<Activity, Deal> $activity */
+            $activity = Relation::noConstraints(fn (): MorphOne => $template->morphOne(Activity::class, 'subject')->latestOfMany('created_at', 'latest_activity'));
+            $activity->addEagerConstraints($saved->all());
+            $latestActivities = $activity->getEager()->keyBy(fn (Activity $model): string => (string) $model->subject_id)->all();
+
+            /** @var HasOne<Quote, Deal> $quote */
+            $quote = Relation::noConstraints(fn (): HasOne => $template->hasOne(Quote::class, 'deal_id')->latestOfMany('created_at', 'latest_quote'));
+            $quote->addEagerConstraints($saved->all());
+            $latestQuotes = $quote->getEager()->keyBy(fn (Quote $model): string => (string) $model->deal_id)->all();
+
+            /** @var HasOne<DealStageHistory, Deal> $history */
+            $history = Relation::noConstraints(fn (): HasOne => $template->hasOne(DealStageHistory::class, 'deal_id')->latestOfMany('entered_at', 'latest_stage_entry'));
+            $history->addEagerConstraints($saved->all());
+            $latestHistories = $history->getEager()->keyBy(fn (DealStageHistory $model): string => (string) $model->deal_id)->all();
+        }
+
+        $scores = [];
+        foreach ($deals as $deal) {
+            if ($deal->status === DealStatus::Won || $deal->status === DealStatus::Lost) {
+                $scores[] = $this->closedScore($deal->status);
+
+                continue;
+            }
+
+            $key = (string) $deal->getKey();
+
+            $scores[] = $this->score(
+                $deal,
+                $contactCounts[$key] ?? 0,
+                $latestActivities[$key] ?? null,
+                $latestQuotes[$key] ?? null,
+                $latestHistories[$key] ?? null,
+            );
+        }
+
+        return $scores;
+    }
+
+    /**
+     * @return DealHealthScore
+     */
+    private function closedScore(DealStatus $status): array
+    {
+        if ($status === DealStatus::Won) {
             return [
                 'score' => 100,
                 'status' => 'strong',
@@ -39,25 +155,28 @@ class CalculateDealHealthScoreAction
             ];
         }
 
-        if ($deal->status === DealStatus::Lost) {
-            return [
-                'score' => 0,
-                'status' => 'stalled',
-                'badge_label' => 'Closed Lost (0)',
-                'badge_color' => 'danger',
-                'factors' => [
-                    ['name' => 'Deal Lost', 'points' => 0, 'positive' => false, 'description' => 'Deal was marked lost.'],
-                ],
-                'recommendations' => ['Review lost retro notes and schedule a re-engagement touch in 90 days.'],
-            ];
-        }
+        return [
+            'score' => 0,
+            'status' => 'stalled',
+            'badge_label' => 'Closed Lost (0)',
+            'badge_color' => 'danger',
+            'factors' => [
+                ['name' => 'Deal Lost', 'points' => 0, 'positive' => false, 'description' => 'Deal was marked lost.'],
+            ],
+            'recommendations' => ['Review lost retro notes and schedule a re-engagement touch in 90 days.'],
+        ];
+    }
 
+    /**
+     * @return DealHealthScore
+     */
+    private function score(Deal $deal, int $contactCount, ?Activity $latestActivity, ?Quote $activeQuote, ?DealStageHistory $latestHistory): array
+    {
         $score = 50; // Neutral baseline
         $factors = [];
         $recommendations = [];
 
         // 1. Multi-threading Factor (Deals with 2+ contacts close 2.5x more often)
-        $contactCount = $deal->contacts()->count();
         if ($contactCount >= 2) {
             $score += 20;
             $factors[] = [
@@ -87,8 +206,6 @@ class CalculateDealHealthScoreAction
         }
 
         // 2. Activity Recency & Engagement
-        /** @var Activity|null $latestActivity */
-        $latestActivity = $deal->activities()->latest('created_at')->first();
         if ($latestActivity !== null && $latestActivity->created_at !== null) {
             $daysSinceActivity = (int) $latestActivity->created_at->diffInDays(now());
             if ($daysSinceActivity <= 5) {
@@ -130,10 +247,14 @@ class CalculateDealHealthScoreAction
         }
 
         // 3. Stage Velocity & Rotting Status
-        if ($deal->isRotten()) {
+        // Same rule as Deal::isRotten() and Deal::daysInCurrentStage(), on the preloaded latest stage entry.
+        $enteredAt = $latestHistory !== null ? $latestHistory->entered_at : ($deal->created_at ?? now());
+        $daysInStage = (int) $enteredAt->diffInDays(now());
+        $rotAfterDays = $deal->stage->rot_after_days;
+
+        if ($rotAfterDays !== null && $rotAfterDays > 0 && $daysInStage >= $rotAfterDays) {
             $score -= 30;
-            $rotDays = $deal->stage->rot_after_days ?? 14;
-            $daysInStage = $deal->daysInCurrentStage();
+            $rotDays = $rotAfterDays;
             $factors[] = [
                 'name' => 'Deal Rotting',
                 'points' => -30,
@@ -152,8 +273,6 @@ class CalculateDealHealthScoreAction
         }
 
         // 4. Quote Momentum
-        /** @var Quote|null $activeQuote */
-        $activeQuote = $deal->quotes()->latest()->first();
         if ($activeQuote !== null) {
             if ($activeQuote->status === QuoteStatus::Accepted) {
                 $score += 30;
