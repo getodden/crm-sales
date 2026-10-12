@@ -9,6 +9,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Odden\Core\Enums\ActivityStatus;
 use Odden\Core\Enums\ActivityType;
+use Odden\Core\Enums\LifecycleStage;
 use Odden\Core\Models\Activity;
 use Odden\Core\Models\Contact;
 use Odden\Sales\Actions\AcceptQuoteAction;
@@ -139,7 +140,7 @@ class SalesHardeningTest extends TestCase
         /** @var PipelineStage $wonStage */
         $wonStage = $pipeline->stages->firstWhere('is_closed_won', true);
 
-        $contact = Contact::factory()->create(['email' => 'prospect@enterprise.com']);
+        $contact = Contact::factory()->create(['email' => 'prospect@enterprise.com', 'lifecycle_stage' => LifecycleStage::Lead]);
         $deal = Deal::factory()->create([
             'pipeline_id' => $pipeline->id,
             'stage_id' => $initialStage->id,

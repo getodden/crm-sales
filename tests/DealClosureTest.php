@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Odden\Sales\Tests;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Odden\Core\Enums\LifecycleStage;
 use Odden\Core\Models\Contact;
 use Odden\Sales\Actions\EnrollContactInSequenceAction;
 use Odden\Sales\Models\Deal;
@@ -50,7 +51,7 @@ class DealClosureTest extends TestCase
     public function test_closing_a_deal_keeps_cadences_of_contacts_with_another_open_deal(): void
     {
         $pipeline = Pipeline::factory()->withStages()->create();
-        $contact = Contact::factory()->create();
+        $contact = Contact::factory()->create(['lifecycle_stage' => LifecycleStage::Lead]);
         $closing = $this->dealFor($contact, $pipeline);
         $this->dealFor($contact, $pipeline);
         $enrollment = $this->enroll($contact, 'Outbound');
@@ -63,7 +64,7 @@ class DealClosureTest extends TestCase
     public function test_closing_a_deal_keeps_cadences_begun_after_the_contact_became_a_customer(): void
     {
         $pipeline = Pipeline::factory()->withStages()->create();
-        $contact = Contact::factory()->create(['became_customer_at' => now()->subMonth()]);
+        $contact = Contact::factory()->create(['lifecycle_stage' => LifecycleStage::Customer, 'became_customer_at' => now()->subMonth()]);
         $deal = $this->dealFor($contact, $pipeline);
         $onboarding = $this->enroll($contact, 'Onboarding');
 
@@ -75,7 +76,7 @@ class DealClosureTest extends TestCase
     public function test_closing_a_deal_stops_prospecting_cadences(): void
     {
         $pipeline = Pipeline::factory()->withStages()->create();
-        $contact = Contact::factory()->create();
+        $contact = Contact::factory()->create(['lifecycle_stage' => LifecycleStage::Lead]);
         $deal = $this->dealFor($contact, $pipeline);
         $outbound = $this->enroll($contact, 'Outbound');
 
