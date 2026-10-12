@@ -176,7 +176,7 @@ class SalesHardeningTest extends TestCase
         /** @var PipelineStage $wonStage */
         $wonStage = $pipeline->stages->firstWhere('is_closed_won', true);
 
-        $contact = Contact::factory()->create();
+        $contact = Contact::factory()->create(['lifecycle_stage' => LifecycleStage::Lead]);
         $deal = Deal::factory()->create([
             'pipeline_id' => $pipeline->id,
             'stage_id' => $pipeline->stages->first()->id,
