@@ -18,7 +18,6 @@ class CalculatePipelineForecastAction
      * user may see); without it every deal is counted.
      *
      * @param  Builder<Deal>|null  $visibleDeals
-     *
      * @return array{
      *     open_value: float,
      *     open_count: int,
