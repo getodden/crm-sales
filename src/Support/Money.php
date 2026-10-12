@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Odden\Sales\Support;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
 class Money
@@ -46,7 +47,7 @@ class Money
      * default. Amounts in different currencies must never be added together, so reports cover this one
      * currency and list the rest separately.
      *
-     * @param  Builder<\Illuminate\Database\Eloquent\Model>  $query
+     * @param  Builder<Model>  $query
      */
     public static function reportingCurrency(Builder $query, string $column = 'currency'): string
     {
@@ -70,7 +71,7 @@ class Money
     /**
      * Totals of the records' `amount`, one per currency, formatted and joined: "$1,200.00 + €500.00".
      *
-     * @param  iterable<\Illuminate\Database\Eloquent\Model>  $records
+     * @param  iterable<Model>  $records
      */
     public static function formatTotals(iterable $records, string $amountAttribute = 'amount', int $decimals = 2): string
     {
