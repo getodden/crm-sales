@@ -73,12 +73,7 @@ class AcceptQuoteAction
                 throw new QuoteNotAcceptableException('This proposal is no longer open. Please contact us about it.');
             }
 
-            $locked->update([
-                'status' => QuoteStatus::Accepted,
-                'accepted_at' => now(),
-                'signed_by_name' => trim($signedByName),
-                'signed_by_email' => strtolower(trim($signedByEmail)),
-            ]);
+            $locked->accept(trim($signedByName), strtolower(trim($signedByEmail)));
 
             return $this->closeDealAsWon($locked);
         });

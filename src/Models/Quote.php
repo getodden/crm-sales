@@ -52,6 +52,19 @@ class Quote extends Model
     use SoftDeletes;
 
     /**
+     * What the customer's signature covers: none of it changes once the quote is accepted.
+     */
+    private const SIGNED_ATTRIBUTES = [
+        'status', 'subtotal', 'discount_amount', 'tax_amount', 'total_amount', 'currency', 'deal_id',
+        'accepted_at', 'signed_by_name', 'signed_by_email',
+    ];
+
+    /**
+     * Set while accept() records the signature: the only way a quote becomes accepted.
+     */
+    private bool $signing = false;
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var list<string>
@@ -122,10 +135,15 @@ class Quote extends Model
             }
         });
 
-        // The customer's signature covers the figures, so they are fixed once the quote is accepted.
+        // The customer's signature covers the figures, so they are fixed once the quote is accepted, and so is the
+        // acceptance itself. A quote only becomes accepted by being signed, through accept().
         static::updating(function (self $quote): void {
-            if ($quote->getOriginal('status') === QuoteStatus::Accepted && $quote->isDirty(['discount_amount', 'tax_amount', 'currency', 'deal_id'])) {
+            if ($quote->getOriginal('status') === QuoteStatus::Accepted && $quote->isDirty(self::SIGNED_ATTRIBUTES)) {
                 throw QuoteLockedException::signed();
+            }
+
+            if ($quote->isDirty('status') && $quote->status === QuoteStatus::Accepted && ! $quote->signing) {
+                throw QuoteLockedException::unsigned();
             }
         });
 
@@ -245,12 +263,18 @@ class Quote extends Model
             throw new QuoteNotAcceptableException("Quote {$this->quote_number} is {$this->status->value} and can no longer be accepted.");
         }
 
-        $this->update([
-            'status' => QuoteStatus::Accepted,
-            'accepted_at' => now(),
-            'signed_by_name' => $name,
-            'signed_by_email' => $email,
-        ]);
+        $this->signing = true;
+
+        try {
+            $this->update([
+                'status' => QuoteStatus::Accepted,
+                'accepted_at' => now(),
+                'signed_by_name' => $name,
+                'signed_by_email' => $email,
+            ]);
+        } finally {
+            $this->signing = false;
+        }
 
         return $this;
     }

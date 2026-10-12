@@ -153,7 +153,7 @@ class QuoteTest extends TestCase
     public function test_a_signed_quote_keeps_its_items_discount_and_tax(): void
     {
         $quote = $this->quoteWithItem();
-        $quote->update(['status' => QuoteStatus::Accepted]);
+        $quote->accept('Alice', 'alice@acme.com');
         $item = $quote->items()->firstOrFail();
 
         $changes = [
@@ -176,6 +176,48 @@ class QuoteTest extends TestCase
         $signed = $quote->fresh();
         $this->assertEquals(1000.00, $signed->total_amount);
         $this->assertCount(1, $signed->items);
+    }
+
+    public function test_a_signed_quote_cannot_be_moved_off_accepted_or_have_its_signature_changed(): void
+    {
+        $quote = $this->quoteWithItem();
+        $quote->accept('Alice', 'alice@acme.com');
+
+        foreach ([
+            ['status' => QuoteStatus::Sent],
+            ['status' => QuoteStatus::Declined],
+            ['signed_by_name' => 'Mallory'],
+            ['total_amount' => 1.00],
+        ] as $change) {
+            try {
+                $quote->fresh()?->update($change);
+                $this->fail('A change to a signed quote was allowed: '.json_encode($change));
+            } catch (QuoteLockedException) {
+                // refused
+            }
+        }
+
+        $signed = $quote->fresh();
+        $this->assertSame(QuoteStatus::Accepted, $signed?->status);
+        $this->assertSame('Alice', $signed->signed_by_name);
+
+        // Its title and notes are not part of the figures and can still change.
+        $signed->update(['notes' => 'Countersigned copy sent.']);
+        $this->assertSame('Countersigned copy sent.', $signed->fresh()?->notes);
+    }
+
+    public function test_a_quote_cannot_be_set_to_accepted_without_a_signature(): void
+    {
+        $quote = $this->quoteWithItem();
+
+        try {
+            $quote->update(['status' => QuoteStatus::Accepted]);
+            $this->fail('The quote was accepted without a signature.');
+        } catch (QuoteLockedException) {
+            // refused
+        }
+
+        $this->assertSame(QuoteStatus::Sent, $quote->fresh()?->status);
     }
 
     public function test_an_open_quote_can_still_be_edited(): void
