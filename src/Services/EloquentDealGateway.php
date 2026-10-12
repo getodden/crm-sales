@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Odden\Sales\Services;
 
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Odden\Core\Contracts\DealGateway;
 use Odden\Core\Enums\DealOutcome;
 use Odden\Core\Models\Company;
@@ -12,10 +13,16 @@ use Odden\Core\Models\Contact;
 use Odden\Core\Support\DealSnapshot;
 use Odden\Sales\Enums\DealStatus;
 use Odden\Sales\Models\Deal;
+use Odden\Sales\Models\DealStageHistory;
 use Odden\Sales\Models\Pipeline;
+use Odden\Sales\Support\Money;
 
 class EloquentDealGateway implements DealGateway
 {
+    /**
+     * With no $pipelineId the default active pipeline is used (or, if none is marked default, the first active
+     * one), and with no $stageId the pipeline's first open stage. A $stageId outside the pipeline is not used.
+     */
     public function createOpenDeal(
         Contact $contact,
         string $name,
@@ -27,34 +34,54 @@ class EloquentDealGateway implements DealGateway
     ): ?DealSnapshot {
         $pipeline = $pipelineId !== null
             ? Pipeline::query()->find($pipelineId)
-            : Pipeline::query()->first();
+            : Pipeline::query()->active()->orderByDesc('is_default')->orderBy('id')->first();
 
         if ($pipeline === null) {
             return null;
         }
 
-        $stageId ??= $pipeline->stages()->orderBy('sort_order', 'asc')->first()?->id;
+        $stage = $stageId !== null
+            ? $pipeline->stages()->whereKey($stageId)->first()
+            : $pipeline->defaultStage();
 
-        if ($stageId === null) {
+        if ($stage === null) {
             return null;
         }
 
-        $deal = Deal::create([
-            'pipeline_id' => $pipeline->id,
-            'stage_id' => $stageId,
-            'name' => $name,
-            'amount' => $amount,
-            'status' => DealStatus::Open,
-            'owner_id' => $ownerId ?? $contact->owner_id,
-        ]);
+        $deal = DB::transaction(function () use ($contact, $name, $amount, $pipeline, $stage, $ownerId, $associateCompany): Deal {
+            $deal = Deal::create([
+                'pipeline_id' => $pipeline->id,
+                'stage_id' => $stage->id,
+                'name' => $name,
+                'amount' => $amount,
+                'currency' => Money::defaultCurrency(),
+                'status' => DealStatus::Open,
+                'owner_id' => $ownerId ?? $contact->owner_id,
+                'team_id' => $contact->team_id,
+            ]);
 
-        $contact->associateWith($deal, 'primary');
+            // The deal's first stage, so its dwell time is measured like any other stage's.
+            DealStageHistory::create([
+                'deal_id' => $deal->id,
+                'from_stage_id' => null,
+                'to_stage_id' => $stage->id,
+                'entered_at' => now(),
+            ]);
 
-        if ($associateCompany) {
-            /** @var Company|null $company */
-            $company = $contact->companies()->first();
-            $company?->associateWith($deal, 'primary');
-        }
+            // The deal is the parent: that is the direction Deal::contacts() and Contact::deals() read.
+            $deal->associateWith($contact, 'primary');
+
+            if ($associateCompany) {
+                /** @var Company|null $company */
+                $company = $contact->companies()->first();
+
+                if ($company !== null) {
+                    $deal->associateWith($company, 'primary');
+                }
+            }
+
+            return $deal;
+        });
 
         return $this->snapshot($deal);
     }
