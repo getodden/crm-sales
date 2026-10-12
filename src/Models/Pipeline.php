@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Odden\Core\Traits\BelongsToTeam;
 use Odden\Sales\Actions\CalculatePipelineForecastAction;
 use Odden\Sales\Database\Factories\PipelineFactory;
+use Odden\Sales\Exceptions\PipelineInUseException;
 
 /**
  * @property int $id
@@ -64,6 +65,28 @@ class Pipeline extends Model
             'is_default' => 'boolean',
             'is_active' => 'boolean',
         ];
+    }
+
+    /**
+     * Bootstrap the model and its events.
+     */
+    protected static function booted(): void
+    {
+        // Deleting the pipeline deletes its stages; the database refuses that too, this gives a readable reason.
+        static::deleting(function (self $pipeline): void {
+            if ($pipeline->isInUse()) {
+                throw PipelineInUseException::pipeline();
+            }
+        });
+    }
+
+    /**
+     * Whether any deal (trashed ones included) is in this pipeline or any stage history leads into one of its stages.
+     */
+    public function isInUse(): bool
+    {
+        return Deal::query()->withTrashed()->where('pipeline_id', $this->id)->exists()
+            || DealStageHistory::query()->whereIn('to_stage_id', PipelineStage::query()->where('pipeline_id', $this->id)->select('id'))->exists();
     }
 
     /**

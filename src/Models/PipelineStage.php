@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Odden\Sales\Database\Factories\PipelineStageFactory;
+use Odden\Sales\Exceptions\PipelineInUseException;
 
 /**
  * @property int $id
@@ -69,6 +70,28 @@ class PipelineStage extends Model
             'is_closed_lost' => 'boolean',
             'rot_after_days' => 'integer',
         ];
+    }
+
+    /**
+     * Bootstrap the model and its events.
+     */
+    protected static function booted(): void
+    {
+        // The database refuses the delete too; this gives a readable reason.
+        static::deleting(function (self $stage): void {
+            if ($stage->isInUse()) {
+                throw PipelineInUseException::stage();
+            }
+        });
+    }
+
+    /**
+     * Whether any deal (trashed ones included) is in this stage or any stage history leads into it.
+     */
+    public function isInUse(): bool
+    {
+        return Deal::query()->withTrashed()->where('stage_id', $this->id)->exists()
+            || DealStageHistory::query()->where('to_stage_id', $this->id)->exists();
     }
 
     /**
