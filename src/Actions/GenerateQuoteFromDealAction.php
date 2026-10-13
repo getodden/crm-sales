@@ -22,9 +22,10 @@ class GenerateQuoteFromDealAction
         ?string $terms = null,
         ?string $notes = null,
         ?CarbonInterface $expiresAt = null,
-        int|string|null $userId = null
+        int|string|null $userId = null,
+        ?string $internalNotes = null
     ): Quote {
-        return DB::transaction(function () use ($deal, $title, $terms, $notes, $expiresAt, $userId): Quote {
+        return DB::transaction(function () use ($deal, $title, $terms, $notes, $expiresAt, $userId, $internalNotes): Quote {
             /** @var Quote $quote */
             $quote = Quote::create([
                 'deal_id' => $deal->id,
@@ -37,6 +38,7 @@ class GenerateQuoteFromDealAction
                 'currency' => $deal->currency,
                 'terms' => $terms ?? 'Payment due net 30 days from signature.',
                 'notes' => $notes,
+                'internal_notes' => $internalNotes,
                 'expires_at' => $expiresAt ?? now()->addDays(30),
                 'user_id' => $userId ?? $deal->owner_id ?? auth()->id(),
             ]);

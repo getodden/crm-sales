@@ -31,7 +31,8 @@ use Odden\Sales\Exceptions\QuoteNotAcceptableException;
  * @property float $total_amount
  * @property string $currency
  * @property string|null $terms
- * @property string|null $notes
+ * @property string|null $notes Shown to the customer on the quote page.
+ * @property string|null $internal_notes Never rendered publicly.
  * @property string $public_token
  * @property CarbonInterface|null $expires_at
  * @property CarbonInterface|null $accepted_at
@@ -81,6 +82,7 @@ class Quote extends Model
         'currency',
         'terms',
         'notes',
+        'internal_notes',
         'public_token',
         'expires_at',
         'accepted_at',
