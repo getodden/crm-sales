@@ -7,6 +7,7 @@ namespace Odden\Sales\Actions;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Odden\Core\Enums\ActivityStatus;
 use Odden\Core\Enums\ActivityType;
@@ -14,6 +15,7 @@ use Odden\Core\Enums\LeadStatus;
 use Odden\Core\Models\Activity;
 use Odden\Core\Models\Contact;
 use Odden\Core\Support\ContactLookup;
+use Odden\Sales\Exceptions\MeetingBookingLimitException;
 use Odden\Sales\Exceptions\MeetingSlotUnavailableException;
 use Odden\Sales\Mail\MeetingBookedMail;
 use Odden\Sales\Mail\SalesMail;
@@ -52,6 +54,7 @@ class BookMeetingAction
         ?string $notes = null
     ): array {
         $email = ContactLookup::normalizeEmail($email);
+        $fullName = $this->plainName($fullName, $email);
 
         // Checked again under the lock below; this only avoids creating a contact for a slot that is
         // already gone.
@@ -59,11 +62,49 @@ class BookMeetingAction
             throw MeetingSlotUnavailableException::at($scheduledAt);
         }
 
+        // The confirmation goes to the address typed in, with the name typed in: one address can only be sent so many.
+        $this->limitPerAddress($email);
+
         [$contact, $matchedExisting] = $this->resolveContact($link, $fullName, $email, $phone);
 
         return DB::transaction(
             fn (): array => $this->bookUnderLock($link, $contact, $matchedExisting, $fullName, $email, $scheduledAt, $notes)
         );
+    }
+
+    /**
+     * The booker's name as it is printed in mail and on the rep's calendar: plain one-line text, with no links or markup (it is
+     * typed by an anonymous visitor into a confirmation that goes out under the host's name). A name that is nothing else falls
+     * back to the address's local part.
+     */
+    protected function plainName(string $name, string $email): string
+    {
+        $name = preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $name) ?? '';
+        $name = preg_replace('~(?:https?://|www\.)\S+~i', '', $name) ?? '';
+        $name = trim(preg_replace('/\s+/u', ' ', str_replace(['<', '>'], '', $name)) ?? '');
+        $name = mb_substr($name, 0, 120);
+
+        return mb_strlen($name) >= 2 ? $name : Str::before($email, '@');
+    }
+
+    /**
+     * @throws MeetingBookingLimitException
+     */
+    protected function limitPerAddress(string $email): void
+    {
+        $max = (int) config('odden-sales.meetings.max_bookings_per_email_per_day', 3);
+
+        if ($max <= 0) {
+            return;
+        }
+
+        $key = 'odden-sales:meeting-booking:'.sha1($email);
+
+        if (RateLimiter::tooManyAttempts($key, $max)) {
+            throw MeetingBookingLimitException::forAddress();
+        }
+
+        RateLimiter::hit($key, 86400);
     }
 
     /**
@@ -157,7 +198,9 @@ class BookMeetingAction
             creatorId: $link->user_id
         );
 
-        // Auto-unenroll contact from active outbound sales cadences upon meeting booking
+        // Auto-unenroll contact from active outbound sales cadences upon meeting booking. That includes a booking under an
+        // existing contact's address that nobody verified: a meeting is now on the rep's calendar for this person, and the
+        // activity above says so on their timeline. (The per-address limit bounds how often one address can be used.)
         SalesSequenceEnrollment::query()
             ->where('contact_id', $contact->id)
             ->where('status', 'active')

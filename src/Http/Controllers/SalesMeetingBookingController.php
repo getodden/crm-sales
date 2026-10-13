@@ -10,6 +10,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Odden\Sales\Actions\BookMeetingAction;
+use Odden\Sales\Exceptions\MeetingBookingLimitException;
 use Odden\Sales\Exceptions\MeetingSlotUnavailableException;
 use Odden\Sales\Models\SalesMeetingLink;
 use Odden\Sales\Services\MeetingAvailability;
@@ -89,6 +90,10 @@ class SalesMeetingBookingController extends Controller
             return back()
                 ->withInput()
                 ->withErrors(['time' => 'That time is no longer available. Please choose another slot.']);
+        } catch (MeetingBookingLimitException $e) {
+            return back()
+                ->withInput()
+                ->withErrors(['email' => $e->getMessage()]);
         }
 
         $when = $scheduledAt->format('l, F j \a\t g:i A');

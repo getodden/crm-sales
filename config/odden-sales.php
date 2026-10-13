@@ -77,6 +77,10 @@ return [
         ],
 
         'booking_window_days' => (int) env('ODDEN_SALES_BOOKING_WINDOW_DAYS', 60),
+
+        // The booking page is public and the confirmation goes to the address typed in: one address can book this many meetings
+        // a day, across every link. 0 turns the limit off.
+        'max_bookings_per_email_per_day' => (int) env('ODDEN_SALES_MAX_BOOKINGS_PER_EMAIL_PER_DAY', 3),
     ],
 
     /*
