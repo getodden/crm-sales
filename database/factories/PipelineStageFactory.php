@@ -41,7 +41,16 @@ class PipelineStageFactory extends Factory
     }
 
     /**
-     * The stage's name as a code, with a number added when the pipeline already holds a stage with that code.
+     * Codes this factory has handed out per pipeline in the current batch. count(n)->create() makes every model before it saves
+     * any, so the database cannot see the earlier ones yet.
+     *
+     * @var array<int|string, list<string>>
+     */
+    private array $issued = [];
+
+    /**
+     * The stage's name as a code, with a number added when the pipeline already holds a stage with that code, or this batch
+     * has already given it to another.
      */
     private function uniqueCode(string $name, mixed $pipelineId): string
     {
@@ -56,9 +65,12 @@ class PipelineStageFactory extends Factory
         $code = $base;
         $suffix = 1;
 
-        while (PipelineStage::query()->withoutGlobalScopes()->where('pipeline_id', $pipelineId)->where('code', $code)->exists()) {
+        while (in_array($code, $this->issued[$pipelineId] ?? [], true)
+            || PipelineStage::query()->withoutGlobalScopes()->where('pipeline_id', $pipelineId)->where('code', $code)->exists()) {
             $code = $base.'_'.(++$suffix);
         }
+
+        $this->issued[$pipelineId][] = $code;
 
         return $code;
     }

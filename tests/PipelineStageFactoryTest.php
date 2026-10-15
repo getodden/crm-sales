@@ -27,6 +27,15 @@ class PipelineStageFactoryTest extends TestCase
         $this->assertCount(60, $codes->unique());
     }
 
+    public function test_a_batch_with_the_same_name_gets_distinct_codes(): void
+    {
+        $pipeline = Pipeline::factory()->create();
+
+        $stages = PipelineStage::factory()->count(5)->create(['pipeline_id' => $pipeline->id, 'name' => 'Qualified']);
+
+        $this->assertSame(['qualified', 'qualified_2', 'qualified_3', 'qualified_4', 'qualified_5'], $stages->pluck('code')->all());
+    }
+
     public function test_the_same_name_twice_gets_a_distinct_code(): void
     {
         $pipeline = Pipeline::factory()->create();
