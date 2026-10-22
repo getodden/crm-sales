@@ -14,6 +14,7 @@ use Odden\Core\Enums\LeadStatus;
 use Odden\Core\Enums\LifecycleStage;
 use Odden\Core\Models\Activity;
 use Odden\Core\Models\Contact;
+use Odden\Core\Models\DemoRecord;
 use Odden\Core\Support\UserModel;
 use Odden\Sales\Mail\SalesMail;
 use Odden\Sales\Mail\SequenceStepMail;
@@ -28,6 +29,7 @@ class ProcessCadencesAction
     public const SKIP_REASONS = [
         'missing_email' => 'Not sent: the contact has no email address.',
         'invalid_email' => 'Not sent: the contact\'s email address is not valid.',
+        'sample_contact' => 'Not sent: the contact is sample data, so no email is sent.',
         'bounced' => 'Not sent: email to the contact\'s address has bounced.',
         'missing_template' => 'Not sent: the step has no email template, or its template was deleted.',
     ];
@@ -195,6 +197,7 @@ class ProcessCadencesAction
         $skipReason = match (true) {
             $email === '' => 'missing_email',
             filter_var($email, FILTER_VALIDATE_EMAIL) === false => 'invalid_email',
+            DemoRecord::isDemo($contact) => 'sample_contact',
             $contact->hasBounced() => 'bounced',
             $contact->email_status === EmailStatus::Invalid => 'invalid_email',
             $template === null => 'missing_template',

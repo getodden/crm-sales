@@ -7,12 +7,14 @@ namespace Odden\Sales;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Odden\Core\Contracts\DealGateway;
+use Odden\Core\Demo\DemoRegistry;
 use Odden\Core\Events\ContactsMerged;
 use Odden\Core\Models\Company;
 use Odden\Core\Models\Contact;
 use Odden\Core\Support\ModelRegistry;
 use Odden\Sales\Console\Commands\ExpireStaleQuotesCommand;
 use Odden\Sales\Console\Commands\ProcessCadencesCommand;
+use Odden\Sales\Demo\SalesDemoSeeder;
 use Odden\Sales\Listeners\MoveMergedRecords;
 use Odden\Sales\Models\Deal;
 use Odden\Sales\Models\SalesSequenceEnrollment;
@@ -42,6 +44,8 @@ class SalesServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $this->callAfterResolving(DemoRegistry::class, fn (DemoRegistry $registry) => $registry->register(SalesDemoSeeder::class));
+
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'odden-sales');
         if (config('odden-sales.routes.enabled', true)) {
