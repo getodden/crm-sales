@@ -6,8 +6,8 @@ namespace Odden\Sales\Registry;
 
 use Odden\Core\Registry\ActionResult;
 use Odden\Core\Registry\Actions\BaseAction;
-use Odden\Core\Registry\Actions\Like;
 use Odden\Core\Registry\Actor;
+use Odden\Core\Registry\Like;
 use Odden\Core\Registry\Risk;
 use Odden\Sales\Models\Deal;
 use Odden\Sales\Models\PipelineStage;
