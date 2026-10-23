@@ -11,6 +11,7 @@ use Odden\Core\Demo\DemoRegistry;
 use Odden\Core\Events\ContactsMerged;
 use Odden\Core\Models\Company;
 use Odden\Core\Models\Contact;
+use Odden\Core\Registry\ActionRegistry;
 use Odden\Core\Support\ModelRegistry;
 use Odden\Sales\Console\Commands\ExpireStaleQuotesCommand;
 use Odden\Sales\Console\Commands\ProcessCadencesCommand;
@@ -18,6 +19,8 @@ use Odden\Sales\Demo\SalesDemoSeeder;
 use Odden\Sales\Listeners\MoveMergedRecords;
 use Odden\Sales\Models\Deal;
 use Odden\Sales\Models\SalesSequenceEnrollment;
+use Odden\Sales\Registry\MoveDealStage;
+use Odden\Sales\Registry\SearchDeals;
 use Odden\Sales\Services\EloquentDealGateway;
 
 class SalesServiceProvider extends ServiceProvider
@@ -37,6 +40,8 @@ class SalesServiceProvider extends ServiceProvider
         $this->callAfterResolving(ModelRegistry::class, function (ModelRegistry $registry): void {
             $registry->discover(__DIR__.'/Models', 'Odden\\Sales\\Models');
         });
+
+        $this->callAfterResolving(ActionRegistry::class, fn (ActionRegistry $registry) => $registry->register(SearchDeals::class, MoveDealStage::class));
     }
 
     /**
