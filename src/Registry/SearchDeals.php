@@ -6,6 +6,7 @@ namespace Odden\Sales\Registry;
 
 use Odden\Core\Registry\ActionResult;
 use Odden\Core\Registry\Actions\BaseAction;
+use Odden\Core\Registry\Actions\Like;
 use Odden\Core\Registry\Actor;
 use Odden\Core\Registry\Risk;
 use Odden\Sales\Models\Deal;
@@ -40,9 +41,8 @@ class SearchDeals extends BaseAction
 
     public function handle(Actor $actor, array $input): ActionResult
     {
-        $deals = Deal::query()
+        $deals = Like::any(Deal::query(), ['name'], (string) $input['query'])
             ->with(['stage', 'pipeline.stages'])
-            ->where('name', 'like', '%'.addcslashes((string) $input['query'], '%_\\').'%')
             ->when(isset($input['status']), fn ($q) => $q->where('status', $input['status']))
             ->orderBy('id')
             ->limit(self::LIMIT)
