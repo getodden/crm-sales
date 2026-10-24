@@ -8,6 +8,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Odden\Core\Models\Company;
 use Odden\Core\Models\Contact;
+use Odden\Core\Models\PropertyHistory;
 use Odden\Sales\Enums\DealStatus;
 use Odden\Sales\Events\DealLost;
 use Odden\Sales\Events\DealMovedStage;
@@ -160,12 +161,11 @@ class DealTest extends TestCase
             'amount' => 25000.00,
         ]);
 
-        $this->assertDatabaseHas('odden_property_history', [
+        $this->assertTrue(PropertyHistory::query()->where([
             'auditable_type' => $deal->getMorphClass(),
             'auditable_id' => $deal->id,
             'property_name' => 'amount',
-            'old_value' => '10000.00',
-        ]);
+        ])->get()->contains(fn (PropertyHistory $row): bool => $row->old_value == '10000.00'));
     }
 
     public function test_contact_and_company_can_query_associated_deals(): void

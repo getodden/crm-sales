@@ -15,6 +15,7 @@ use Odden\Core\Enums\LifecycleStage;
 use Odden\Core\Models\Activity;
 use Odden\Core\Models\Contact;
 use Odden\Core\Models\DemoRecord;
+use Odden\Core\Support\ActivityMarker;
 use Odden\Core\Support\UserModel;
 use Odden\Sales\Mail\SalesMail;
 use Odden\Sales\Mail\SequenceStepMail;
@@ -293,7 +294,7 @@ class ProcessCadencesAction
     /**
      * The activity this enrollment already created for its current manual step, if any.
      *
-     * Activities carry the enrollment id and step in their metadata. Activities from before that metadata existed are
+     * Activities carry the enrollment id and step in their marker. Activities from before the marker existed are
      * recognised by their text. Either way only activities created since the current run began count, so a contact
      * who is enrolled again is not treated as having already done the steps of the earlier run.
      */
@@ -308,8 +309,7 @@ class ProcessCadencesAction
 
         /** @var Activity|null $current */
         $current = (clone $base)
-            ->where('metadata->sequence_enrollment_id', $enrollment->id)
-            ->where('metadata->step', $enrollment->current_step)
+            ->where('marker', ActivityMarker::cadenceStep($enrollment->id, $enrollment->current_step))
             ->latest('id')
             ->first();
 
@@ -321,7 +321,7 @@ class ProcessCadencesAction
 
         /** @var Activity|null $legacy */
         $legacy = (clone $base)
-            ->whereNull('metadata->sequence_enrollment_id')
+            ->whereNull('marker')
             ->latest('id')
             ->get()
             ->first(fn (Activity $activity): bool => str_contains((string) $activity->body, $marker));

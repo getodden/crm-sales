@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Odden\Core\Contracts\DealGateway;
 use Odden\Core\Demo\DemoRegistry;
+use Odden\Core\Encryption\EncryptedColumns;
 use Odden\Core\Events\ContactsMerged;
 use Odden\Core\Models\Company;
 use Odden\Core\Models\Contact;
@@ -50,6 +51,12 @@ class SalesServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->callAfterResolving(DemoRegistry::class, fn (DemoRegistry $registry) => $registry->register(SalesDemoSeeder::class));
+
+        $this->callAfterResolving(EncryptedColumns::class, function (EncryptedColumns $columns): void {
+            $columns->add(fn (): string => config('odden-sales.tables.deals', 'odden_deals'), 'lost_notes', 'deals.lost_notes');
+            $columns->add(fn (): string => config('odden-sales.tables.quotes', 'odden_quotes'), 'notes', 'quotes.notes');
+            $columns->add(fn (): string => config('odden-sales.tables.quotes', 'odden_quotes'), 'internal_notes', 'quotes.internal_notes');
+        });
 
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'odden-sales');

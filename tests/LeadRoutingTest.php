@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Odden\Core\Enums\ActivityType;
 use Odden\Core\Enums\LeadStatus;
+use Odden\Core\Models\Activity;
 use Odden\Core\Models\Contact;
 use Odden\Sales\Actions\RouteLeadAction;
 use Odden\Sales\Enums\LeadRoutingStrategy;
@@ -58,12 +59,11 @@ class LeadRoutingTest extends TestCase
         $this->assertNotNull($result3);
         $this->assertSame($rep1->id, $result3['assigned_user_id']);
 
-        $this->assertDatabaseHas('odden_activities', [
+        $this->assertTrue(Activity::query()->where([
             'subject_type' => $contact1->getMorphClass(),
             'subject_id' => $contact1->id,
             'type' => ActivityType::Note->value,
-            'title' => 'Lead Routed to Alice',
-        ]);
+        ])->get()->contains(fn (Activity $row): bool => $row->title == 'Lead Routed to Alice'));
     }
 
     public function test_territory_strategy_routes_matching_leads_to_the_territory_owner(): void

@@ -46,7 +46,7 @@ it('unenrolls the contact from every active sequence, logs it, and stops later s
     app(ProcessCadencesAction::class)->execute();
     Mail::assertQueued(SequenceStepMail::class, 2); // nothing new after the stop
 
-    $stops = Activity::query()->where('title', 'like', 'Sequence stopped:%')->get();
+    $stops = Activity::query()->get()->filter(fn (Activity $activity): bool => str_starts_with($activity->title, 'Sequence stopped:'));
     expect($stops)->toHaveCount(2)->and($stops->pluck('title')->all())->toContain('Sequence stopped: Outbound', 'Sequence stopped: Nurture');
 });
 

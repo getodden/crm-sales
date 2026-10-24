@@ -8,6 +8,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Odden\Core\Enums\ActivityType;
+use Odden\Core\Models\Activity;
 use Odden\Core\Models\Contact;
 use Odden\Sales\Models\SalesMeetingBooking;
 use Odden\Sales\Models\SalesMeetingLink;
@@ -68,12 +69,11 @@ class SalesMeetingSchedulerTest extends TestCase
         $this->assertSame('Kent', $contact->last_name);
         $this->assertSame($user->id, $contact->owner_id);
 
-        $this->assertDatabaseHas('odden_activities', [
+        $this->assertTrue(Activity::query()->where([
             'subject_type' => $contact->getMorphClass(),
             'subject_id' => $contact->id,
             'type' => ActivityType::Meeting->value,
-            'title' => 'Product Demo Call with Clark Kent',
-        ]);
+        ])->get()->contains(fn (Activity $row): bool => $row->title == 'Product Demo Call with Clark Kent'));
     }
 
     public function test_finding_the_first_open_day_reads_the_bookings_once(): void

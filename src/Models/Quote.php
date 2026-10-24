@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
+use Odden\Core\Encryption\Casts\EncryptedString;
 use Odden\Core\Support\UserModel;
 use Odden\Sales\Database\Factories\QuoteFactory;
 use Odden\Sales\Enums\QuoteStatus;
@@ -114,6 +115,8 @@ class Quote extends Model
             'total_amount' => 'decimal:2',
             'expires_at' => 'date',
             'accepted_at' => 'datetime',
+            'notes' => EncryptedString::class.':quotes.notes',
+            'internal_notes' => EncryptedString::class.':quotes.internal_notes',
         ];
     }
 

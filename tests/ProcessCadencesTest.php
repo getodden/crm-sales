@@ -73,12 +73,11 @@ class ProcessCadencesTest extends TestCase
         $this->assertSame(LeadStatus::InProgress, $contact->lead_status);
         $this->assertNotNull($contact->last_contacted_at);
 
-        $this->assertDatabaseHas('odden_activities', [
+        $this->assertTrue(Activity::query()->where([
             'subject_type' => $contact->getMorphClass(),
             'subject_id' => $contact->id,
             'type' => ActivityType::Email->value,
-            'title' => 'Hello Gordon',
-        ]);
+        ])->get()->contains(fn (Activity $row): bool => $row->title == 'Hello Gordon'));
     }
 
     public function test_process_cadences_command_runs_successfully(): void

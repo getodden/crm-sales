@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Odden\Core\Encryption\Casts\EncryptedString;
 use Odden\Core\Models\Company;
 use Odden\Core\Models\Contact;
 use Odden\Core\Support\UserModel;
@@ -115,6 +116,7 @@ class Deal extends Model
             'expected_close_date' => 'date',
             'closed_at' => 'datetime',
             'properties' => 'array',
+            'lost_notes' => EncryptedString::class.':deals.lost_notes',
         ];
     }
 

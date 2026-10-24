@@ -12,6 +12,7 @@ use Odden\Core\Enums\ActivityType;
 use Odden\Core\Enums\LifecycleStage;
 use Odden\Core\Models\Activity;
 use Odden\Core\Models\Contact;
+use Odden\Core\Support\ActivityMarker;
 use Odden\Sales\Actions\AcceptQuoteAction;
 use Odden\Sales\Actions\BookMeetingAction;
 use Odden\Sales\Actions\ChangeDealStageAction;
@@ -484,7 +485,7 @@ class SalesHardeningTest extends TestCase
         $viewActivity = Activity::query()
             ->where('subject_type', $deal->getMorphClass())
             ->where('subject_id', $deal->id)
-            ->where('metadata->event', 'portal_view')
+            ->where('marker', ActivityMarker::quotePortalView($quote->id))
             ->first();
 
         $this->assertNotNull($viewActivity);
@@ -512,7 +513,7 @@ class SalesHardeningTest extends TestCase
         $this->get(route('odden.quotes.show', ['token' => $quote->public_token]))->assertNotFound();
 
         $this->assertSame(QuoteStatus::Draft, $quote->fresh()->status);
-        $this->assertSame(0, Activity::query()->where('metadata->event', 'portal_view')->count());
+        $this->assertSame(0, Activity::query()->where('marker', ActivityMarker::quotePortalView($quote->id))->count());
     }
 
     public function test_sales_playbook_execution_on_deal_logs_note_and_syncs_properties(): void
@@ -549,8 +550,8 @@ class SalesHardeningTest extends TestCase
             ->where('subject_type', $deal->getMorphClass())
             ->where('subject_id', $deal->id)
             ->where('type', ActivityType::Note)
-            ->where('title', 'Playbook: BANT Qualification')
-            ->first();
+            ->get()
+            ->firstWhere('title', 'Playbook: BANT Qualification');
 
         $this->assertNotNull($note);
         $this->assertStringContainsString('Playbook Execution: BANT Qualification', (string) $note->body);

@@ -9,6 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Odden\Core\Enums\ActivityType;
+use Odden\Core\Support\ActivityMarker;
 use Odden\Sales\Actions\AcceptQuoteAction;
 use Odden\Sales\Enums\QuoteStatus;
 use Odden\Sales\Exceptions\QuoteNotAcceptableException;
@@ -36,8 +37,7 @@ class QuoteAcceptanceController extends Controller
 
         // Log portal viewing activity on the deal (throttled to once every 2 hours per quote)
         $recentView = $quote->deal->activities()
-            ->where('metadata->quote_id', $quote->id)
-            ->where('metadata->event', 'portal_view')
+            ->where('marker', ActivityMarker::quotePortalView($quote->id))
             ->where('created_at', '>=', now()->subHours(2))
             ->exists();
 
