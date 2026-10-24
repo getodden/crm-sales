@@ -56,7 +56,11 @@ class SalesServiceProvider extends ServiceProvider
         $this->callAfterResolving(DemoRegistry::class, fn (DemoRegistry $registry) => $registry->register(SalesDemoSeeder::class));
 
         $this->callAfterResolving(DataAreas::class, function (DataAreas $areas): void {
-            $areas->fields(['deals.lost_notes' => DataArea::Sales, 'quotes.notes' => DataArea::Sales, 'quotes.internal_notes' => DataArea::Sales]);
+            $areas->fields([
+                'deals.lost_notes' => DataArea::Sales, 'deals.name' => DataArea::Sales, 'quotes.notes' => DataArea::Sales, 'quotes.internal_notes' => DataArea::Sales,
+                'quotes.signed_by_name' => DataArea::Sales, 'quotes.signed_by_email' => DataArea::Sales,
+                'meeting_bookings.invitee_name' => DataArea::Sales, 'meeting_bookings.invitee_email' => DataArea::Sales,
+            ]);
             $areas->tables(array_fill_keys([
                 'odden_deals', 'odden_deal_products', 'odden_deal_stage_history', 'odden_pipelines', 'odden_pipeline_stages', 'odden_quotes', 'odden_quote_items',
                 'odden_stage_automations', 'odden_sales_email_templates', 'odden_sales_lead_routing_rules', 'odden_sales_meeting_bookings',
@@ -68,6 +72,12 @@ class SalesServiceProvider extends ServiceProvider
             $columns->add(fn (): string => config('odden-sales.tables.deals', 'odden_deals'), 'lost_notes', 'deals.lost_notes');
             $columns->add(fn (): string => config('odden-sales.tables.quotes', 'odden_quotes'), 'notes', 'quotes.notes');
             $columns->add(fn (): string => config('odden-sales.tables.quotes', 'odden_quotes'), 'internal_notes', 'quotes.internal_notes');
+            $columns->add(fn (): string => config('odden-sales.tables.deals', 'odden_deals'), 'name', 'deals.name');
+            $columns->addIndexed(Deal::class);
+            $columns->add(fn (): string => config('odden-sales.tables.quotes', 'odden_quotes'), 'signed_by_name', 'quotes.signed_by_name');
+            $columns->add(fn (): string => config('odden-sales.tables.quotes', 'odden_quotes'), 'signed_by_email', 'quotes.signed_by_email');
+            $columns->add(fn (): string => config('odden-sales.tables.meeting_bookings', 'odden_sales_meeting_bookings'), 'invitee_name', 'meeting_bookings.invitee_name');
+            $columns->add(fn (): string => config('odden-sales.tables.meeting_bookings', 'odden_sales_meeting_bookings'), 'invitee_email', 'meeting_bookings.invitee_email');
         });
 
         // The figures a workspace can choose to keep encrypted (PLAN-encryption-at-rest.md, section 6).

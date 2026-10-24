@@ -17,6 +17,9 @@ use Odden\Core\Areas\ProtectedByArea;
 use Odden\Core\Encryption\Casts\CustomProperties;
 use Odden\Core\Encryption\Casts\EncryptedAmount;
 use Odden\Core\Encryption\Casts\EncryptedString;
+use Odden\Core\Encryption\Index\BlindIndexed;
+use Odden\Core\Encryption\Index\HasBlindIndexes;
+use Odden\Core\Encryption\Index\IndexText;
 use Odden\Core\Models\Company;
 use Odden\Core\Models\Contact;
 use Odden\Core\Support\UserModel;
@@ -55,12 +58,13 @@ use RuntimeException;
  * @property-read Collection<int, DealProduct> $products
  * @property-read Collection<int, Quote> $quotes
  */
-class Deal extends Model
+class Deal extends Model implements BlindIndexed
 {
     use AuditsProperties;
     use BelongsToTeam;
     use HasActivities;
     use HasAssociations;
+    use HasBlindIndexes;
     use HasCustomProperties;
 
     /** @use HasFactory<DealFactory> */
@@ -121,7 +125,35 @@ class Deal extends Model
             'closed_at' => 'datetime',
             'properties' => CustomProperties::class,
             'lost_notes' => EncryptedString::class.':deals.lost_notes',
+            'name' => EncryptedString::class.':deals.name',
         ];
+    }
+
+    /**
+     * The deal name is found again through the search index: as a whole, by word and by the start of a word. (A deal is often named
+     * after the company or person it is with.)
+     *
+     * @return array<string, array<string, string|true>>
+     */
+    public static function blindIndexedColumns(): array
+    {
+        return ['name' => ['exact' => IndexText::TEXT, 'word' => true, 'prefix' => true]];
+    }
+
+    public static function blindIndexPrefix(): string
+    {
+        return 'deals';
+    }
+
+    /**
+     * Deals with a word of this text at the start of a word of the name (every word typed must match).
+     *
+     * @param  Builder<$this>  $query
+     * @return Builder<$this>
+     */
+    public function scopeWhereNameStartsWith(Builder $query, string $text): Builder
+    {
+        return $this->scopeWhereBlindWords($query, ['name'], $text);
     }
 
     /**

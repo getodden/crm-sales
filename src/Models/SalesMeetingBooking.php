@@ -8,6 +8,7 @@ use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Odden\Core\Encryption\Casts\EncryptedString;
 use Odden\Core\Models\Activity;
 use Odden\Core\Models\Contact;
 use Odden\Core\Support\UserModel;
@@ -74,6 +75,8 @@ class SalesMeetingBooking extends Model
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
             'cancelled_at' => 'datetime',
+            'invitee_name' => EncryptedString::class.':meeting_bookings.invitee_name',
+            'invitee_email' => EncryptedString::class.':meeting_bookings.invitee_email',
         ];
     }
 

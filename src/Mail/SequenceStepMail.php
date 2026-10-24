@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Odden\Sales\Mail;
 
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Address;
@@ -15,7 +16,7 @@ use Illuminate\Queue\SerializesModels;
 /**
  * A rendered sales email template sent by a sequence email step.
  */
-class SequenceStepMail extends Mailable implements ShouldQueue
+class SequenceStepMail extends Mailable implements ShouldBeEncrypted, ShouldQueue
 {
     use ConfiguresSalesMail, Queueable, SerializesModels;
 

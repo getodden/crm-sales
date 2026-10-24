@@ -8,7 +8,6 @@ use Odden\Core\Areas\DataArea;
 use Odden\Core\Registry\ActionResult;
 use Odden\Core\Registry\Actions\BaseAction;
 use Odden\Core\Registry\Actor;
-use Odden\Core\Registry\Like;
 use Odden\Core\Registry\Risk;
 use Odden\Sales\Models\Deal;
 use Odden\Sales\Models\PipelineStage;
@@ -50,7 +49,7 @@ class SearchDeals extends BaseAction
 
     public function handle(Actor $actor, array $input): ActionResult
     {
-        $deals = Like::any(Deal::query(), ['name'], (string) $input['query'])
+        $deals = Deal::query()->whereNameStartsWith((string) $input['query'])
             ->with(['stage', 'pipeline.stages'])
             ->when(isset($input['status']), fn ($q) => $q->where('status', $input['status']))
             ->orderBy('id')

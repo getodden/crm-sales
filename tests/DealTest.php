@@ -39,11 +39,11 @@ class DealTest extends TestCase
 
         $this->assertDatabaseHas('odden_deals', [
             'id' => $deal->id,
-            'name' => 'Acme Cloud Migration',
             'amount' => 45000.00,
             'status' => 'open',
         ]);
 
+        $this->assertSame('Acme Cloud Migration', $deal->fresh()->name);
         $this->assertSame('Inbound Webform', $deal->fresh()->properties['deal_source']);
         $this->assertSame(24, $deal->fresh()->properties['contract_length_months']);
     }

@@ -119,6 +119,8 @@ class Quote extends Model
             'accepted_at' => 'datetime',
             'notes' => EncryptedString::class.':quotes.notes',
             'internal_notes' => EncryptedString::class.':quotes.internal_notes',
+            'signed_by_name' => EncryptedString::class.':quotes.signed_by_name',
+            'signed_by_email' => EncryptedString::class.':quotes.signed_by_email',
         ];
     }
 

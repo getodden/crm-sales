@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Odden\Sales\Mail;
 
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Address;
@@ -19,7 +20,7 @@ use Odden\Sales\Services\MeetingInvite;
 /**
  * Confirmation of a booked meeting, with an .ics invite. Sent to the invitee and to the host.
  */
-class MeetingBookedMail extends Mailable implements ShouldQueue
+class MeetingBookedMail extends Mailable implements ShouldBeEncrypted, ShouldQueue
 {
     use ConfiguresSalesMail, Queueable, SerializesModels;
 
