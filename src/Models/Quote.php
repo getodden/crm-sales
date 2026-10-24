@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
+use Odden\Core\Areas\ProtectedByArea;
 use Odden\Core\Encryption\Casts\EncryptedString;
 use Odden\Core\Support\UserModel;
 use Odden\Sales\Database\Factories\QuoteFactory;
@@ -51,6 +52,7 @@ class Quote extends Model
     /** @use HasFactory<QuoteFactory> */
     use HasFactory;
 
+    use ProtectedByArea;
     use SoftDeletes;
 
     /**

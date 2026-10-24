@@ -6,6 +6,8 @@ namespace Odden\Sales;
 
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
+use Odden\Core\Areas\DataArea;
+use Odden\Core\Areas\DataAreas;
 use Odden\Core\Contracts\DealGateway;
 use Odden\Core\Demo\DemoRegistry;
 use Odden\Core\Encryption\EncryptedColumns;
@@ -51,6 +53,15 @@ class SalesServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->callAfterResolving(DemoRegistry::class, fn (DemoRegistry $registry) => $registry->register(SalesDemoSeeder::class));
+
+        $this->callAfterResolving(DataAreas::class, function (DataAreas $areas): void {
+            $areas->fields(['deals.lost_notes' => DataArea::Sales, 'quotes.notes' => DataArea::Sales, 'quotes.internal_notes' => DataArea::Sales]);
+            $areas->tables(array_fill_keys([
+                'odden_deals', 'odden_deal_products', 'odden_deal_stage_history', 'odden_pipelines', 'odden_pipeline_stages', 'odden_quotes', 'odden_quote_items',
+                'odden_stage_automations', 'odden_sales_email_templates', 'odden_sales_lead_routing_rules', 'odden_sales_meeting_bookings',
+                'odden_sales_meeting_links', 'odden_sales_playbooks', 'odden_sales_quotas', 'odden_sales_sequence_enrollments', 'odden_sales_sequences',
+            ], DataArea::Sales));
+        });
 
         $this->callAfterResolving(EncryptedColumns::class, function (EncryptedColumns $columns): void {
             $columns->add(fn (): string => config('odden-sales.tables.deals', 'odden_deals'), 'lost_notes', 'deals.lost_notes');

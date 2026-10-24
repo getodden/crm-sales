@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Odden\Sales\Registry;
 
+use Odden\Core\Areas\DataArea;
 use Odden\Core\Registry\ActionResult;
 use Odden\Core\Registry\Actions\BaseAction;
 use Odden\Core\Registry\Actor;
@@ -37,6 +38,14 @@ class SearchDeals extends BaseAction
     public function risk(): Risk
     {
         return Risk::Read;
+    }
+
+    public function areas(): array
+    {
+        return [
+            'name' => DataArea::Sales,
+            'amount' => DataArea::Sales,
+        ];
     }
 
     public function handle(Actor $actor, array $input): ActionResult

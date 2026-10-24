@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Odden\Core\Areas\ProtectedByArea;
 use Odden\Core\Encryption\Casts\EncryptedString;
 use Odden\Core\Models\Company;
 use Odden\Core\Models\Contact;
@@ -63,6 +64,7 @@ class Deal extends Model
     /** @use HasFactory<DealFactory> */
     use HasFactory;
 
+    use ProtectedByArea;
     use SoftDeletes;
 
     /**
