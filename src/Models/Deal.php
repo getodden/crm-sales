@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Odden\Core\Areas\ProtectedByArea;
+use Odden\Core\Encryption\Casts\CustomProperties;
+use Odden\Core\Encryption\Casts\EncryptedAmount;
 use Odden\Core\Encryption\Casts\EncryptedString;
 use Odden\Core\Models\Company;
 use Odden\Core\Models\Contact;
@@ -113,11 +115,11 @@ class Deal extends Model
     protected function casts(): array
     {
         return [
-            'amount' => 'decimal:2',
+            'amount' => EncryptedAmount::class.':deals.amount',
             'status' => DealStatus::class,
             'expected_close_date' => 'date',
             'closed_at' => 'datetime',
-            'properties' => 'array',
+            'properties' => CustomProperties::class,
             'lost_notes' => EncryptedString::class.':deals.lost_notes',
         ];
     }

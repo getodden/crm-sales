@@ -7,6 +7,7 @@ namespace Odden\Sales\Models;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Odden\Core\Encryption\Casts\EncryptedAmount;
 use Odden\Core\Support\UserModel;
 use Odden\Sales\Enums\QuotaPeriod;
 
@@ -59,7 +60,7 @@ class SalesQuota extends Model
             'period_type' => QuotaPeriod::class,
             'period_start' => 'date',
             'period_end' => 'date',
-            'target_amount' => 'decimal:2',
+            'target_amount' => EncryptedAmount::class.':sales_quotas.target_amount',
         ];
     }
 

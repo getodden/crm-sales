@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Odden\Sales\Actions;
 
+use Odden\Core\Encryption\EncryptedAmounts;
 use Odden\Sales\Models\Deal;
 use Odden\Sales\Models\SalesQuota;
 use Odden\Sales\Support\Money;
@@ -59,22 +60,22 @@ class CalculateQuotaAttainmentAction
         $dealsQuery->where("{$dealsTable}.currency", $currency);
 
         // Won deals closed within the quota period
-        $wonAmount = (float) (clone $dealsQuery)
+        $amounts = app(EncryptedAmounts::class);
+
+        $wonAmount = $amounts->sum((clone $dealsQuery)
             ->where("{$dealsTable}.status", 'won')
             ->whereBetween("{$dealsTable}.closed_at", [
                 $quota->period_start->startOfDay(),
                 $quota->period_end->endOfDay(),
-            ])
-            ->sum("{$dealsTable}.amount");
+            ]), 'amount');
 
         // Open pipeline deals expected to close within the quota period
-        $openPipelineAmount = (float) (clone $dealsQuery)
+        $openPipelineAmount = $amounts->sum((clone $dealsQuery)
             ->where("{$dealsTable}.status", 'open')
             ->whereBetween("{$dealsTable}.expected_close_date", [
                 $quota->period_start,
                 $quota->period_end,
-            ])
-            ->sum("{$dealsTable}.amount");
+            ]), 'amount');
 
         $target = (float) $quota->target_amount;
         $attainmentPercent = $target > 0 ? round(($wonAmount / $target) * 100, 1) : 0.0;

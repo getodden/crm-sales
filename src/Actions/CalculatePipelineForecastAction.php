@@ -6,6 +6,7 @@ namespace Odden\Sales\Actions;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Odden\Core\Encryption\EncryptedAmounts;
 use Odden\Sales\Enums\DealStatus;
 use Odden\Sales\Models\Deal;
 use Odden\Sales\Support\Money;
@@ -43,6 +44,7 @@ class CalculatePipelineForecastAction
     {
         $dealsTable = config('odden-sales.tables.deals', 'odden_deals');
         $stagesTable = config('odden-sales.tables.stages', 'odden_pipeline_stages');
+        $amounts = app(EncryptedAmounts::class);
 
         $baseQuery = Deal::query();
         if ($visibleDeals !== null) {
@@ -59,28 +61,25 @@ class CalculatePipelineForecastAction
             ? strtoupper(trim($currency))
             : Money::reportingCurrency($baseQuery, "{$dealsTable}.currency");
 
-        $otherCurrencies = $this->otherCurrencies(clone $baseQuery, $currency, $dealsTable);
+        $otherCurrencies = $this->otherCurrencies(clone $baseQuery, $currency, $dealsTable, $amounts);
         $baseQuery->where("{$dealsTable}.currency", $currency);
 
         // 1. Open deals and value
         $openQuery = (clone $baseQuery)->where("{$dealsTable}.status", DealStatus::Open->value);
         $openCount = $openQuery->count();
-        $openValue = (float) $openQuery->sum("{$dealsTable}.amount");
+        $openValue = $amounts->sum($openQuery, 'amount');
 
-        // 2. Weighted forecast value based on stage win probability, summed in the database
-        $weighted = (clone $openQuery)
-            ->join($stagesTable, "{$stagesTable}.id", '=', "{$dealsTable}.stage_id")
-            ->reorder()
-            ->toBase()
-            // amount is only on deals and probability only on stages, so neither needs its table name.
-            ->selectRaw('sum(amount * probability) as weighted')
-            ->first();
-        $weightedForecast = (float) ($weighted->weighted ?? 0) / 100.0;
+        // 2. Weighted forecast value based on stage win probability, summed in the database (in PHP for the amounts a workspace keeps encrypted)
+        $weightedForecast = $amounts->weighted(
+            (clone $openQuery)->join($stagesTable, "{$stagesTable}.id", '=', "{$dealsTable}.stage_id"),
+            'amount',
+            "{$stagesTable}.probability",
+        ) / 100.0;
 
         // 3. Won deals
         $wonQuery = (clone $baseQuery)->where("{$dealsTable}.status", DealStatus::Won->value);
         $wonCount = $wonQuery->count();
-        $wonValue = (float) $wonQuery->sum("{$dealsTable}.amount");
+        $wonValue = $amounts->sum($wonQuery, 'amount');
 
         // 4. Lost deals & Win rate
         $lostQuery = (clone $baseQuery)->where("{$dealsTable}.status", DealStatus::Lost->value);
@@ -92,7 +91,7 @@ class CalculatePipelineForecastAction
         // 5. Average deal size. `average_deal_size` keeps its original meaning (every deal in the
         // reporting currency: open, won and lost) for compatibility; `average_won_deal_size` is the
         // average of won deals only, which is what "average deal size" usually means in sales reporting.
-        $averageDealSize = (float) ($baseQuery->avg("{$dealsTable}.amount") ?? 0.0);
+        $averageDealSize = $amounts->average($baseQuery, 'amount');
         $averageWonDealSize = $wonCount > 0 ? $wonValue / $wonCount : 0.0;
 
         // 6. Lost reasons breakdown, counted in the database; most frequent first
@@ -141,16 +140,13 @@ class CalculatePipelineForecastAction
      * @param  Builder<Deal>  $query
      * @return array<string, array{open_count: int, open_value: float, won_count: int, won_value: float, lost_count: int}>
      */
-    protected function otherCurrencies(Builder $query, string $currency, string $dealsTable): array
+    protected function otherCurrencies(Builder $query, string $currency, string $dealsTable, EncryptedAmounts $amounts): array
     {
-        $rows = $query
-            ->where("{$dealsTable}.currency", '!=', $currency)
-            ->reorder()
-            ->toBase()
-            ->select(["{$dealsTable}.currency as currency", "{$dealsTable}.status as status"])
-            ->selectRaw('count(*) as deal_count, sum(amount) as deal_amount')
-            ->groupBy("{$dealsTable}.currency", "{$dealsTable}.status")
-            ->get();
+        $rows = $amounts->grouped(
+            $query->where("{$dealsTable}.currency", '!=', $currency),
+            'amount',
+            ["{$dealsTable}.currency", "{$dealsTable}.status"],
+        );
 
         $result = [];
 
@@ -160,9 +156,9 @@ class CalculatePipelineForecastAction
             $status = (string) $row->status;
 
             match ($status) {
-                DealStatus::Open->value => $result[$code] = [...$result[$code], 'open_count' => (int) $row->deal_count, 'open_value' => round((float) $row->deal_amount, 2)],
-                DealStatus::Won->value => $result[$code] = [...$result[$code], 'won_count' => (int) $row->deal_count, 'won_value' => round((float) $row->deal_amount, 2)],
-                DealStatus::Lost->value => $result[$code] = [...$result[$code], 'lost_count' => (int) $row->deal_count],
+                DealStatus::Open->value => $result[$code] = [...$result[$code], 'open_count' => (int) $row->records, 'open_value' => round((float) $row->total, 2)],
+                DealStatus::Won->value => $result[$code] = [...$result[$code], 'won_count' => (int) $row->records, 'won_value' => round((float) $row->total, 2)],
+                DealStatus::Lost->value => $result[$code] = [...$result[$code], 'lost_count' => (int) $row->records],
                 default => null,
             };
         }

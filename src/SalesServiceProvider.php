@@ -10,6 +10,7 @@ use Odden\Core\Areas\DataArea;
 use Odden\Core\Areas\DataAreas;
 use Odden\Core\Contracts\DealGateway;
 use Odden\Core\Demo\DemoRegistry;
+use Odden\Core\Encryption\BusinessDataColumns;
 use Odden\Core\Encryption\EncryptedColumns;
 use Odden\Core\Events\ContactsMerged;
 use Odden\Core\Models\Company;
@@ -67,6 +68,12 @@ class SalesServiceProvider extends ServiceProvider
             $columns->add(fn (): string => config('odden-sales.tables.deals', 'odden_deals'), 'lost_notes', 'deals.lost_notes');
             $columns->add(fn (): string => config('odden-sales.tables.quotes', 'odden_quotes'), 'notes', 'quotes.notes');
             $columns->add(fn (): string => config('odden-sales.tables.quotes', 'odden_quotes'), 'internal_notes', 'quotes.internal_notes');
+        });
+
+        // The figures a workspace can choose to keep encrypted (PLAN-encryption-at-rest.md, section 6).
+        $this->callAfterResolving(BusinessDataColumns::class, function (BusinessDataColumns $columns): void {
+            $columns->add(fn (): string => config('odden-sales.tables.deals', 'odden_deals'), 'amount', 'deals.amount');
+            $columns->add(fn (): string => config('odden-sales.tables.quotas', 'odden_sales_quotas'), 'target_amount', 'sales_quotas.target_amount');
         });
 
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
