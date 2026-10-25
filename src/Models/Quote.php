@@ -15,6 +15,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 use Odden\Core\Areas\ProtectedByArea;
 use Odden\Core\Encryption\Casts\EncryptedString;
+use Odden\Core\Encryption\Index\BlindIndexed;
+use Odden\Core\Encryption\Index\HasBlindIndexes;
 use Odden\Core\Support\UserModel;
 use Odden\Sales\Database\Factories\QuoteFactory;
 use Odden\Sales\Enums\QuoteStatus;
@@ -47,8 +49,10 @@ use Odden\Sales\Exceptions\QuoteNotAcceptableException;
  * @property-read Deal $deal
  * @property-read Collection<int, QuoteItem> $items
  */
-class Quote extends Model
+class Quote extends Model implements BlindIndexed
 {
+    use HasBlindIndexes;
+
     /** @use HasFactory<QuoteFactory> */
     use HasFactory;
 
@@ -117,11 +121,38 @@ class Quote extends Model
             'total_amount' => 'decimal:2',
             'expires_at' => 'date',
             'accepted_at' => 'datetime',
+            'title' => EncryptedString::class.':quotes.title',
             'notes' => EncryptedString::class.':quotes.notes',
             'internal_notes' => EncryptedString::class.':quotes.internal_notes',
             'signed_by_name' => EncryptedString::class.':quotes.signed_by_name',
             'signed_by_email' => EncryptedString::class.':quotes.signed_by_email',
         ];
+    }
+
+    /**
+     * The title ("Quote for {deal name}") is found again through the search index: by word and by the start of a word.
+     *
+     * @return array<string, array<string, string|true>>
+     */
+    public static function blindIndexedColumns(): array
+    {
+        return ['title' => ['word' => true, 'prefix' => true]];
+    }
+
+    public static function blindIndexPrefix(): string
+    {
+        return 'quotes';
+    }
+
+    /**
+     * Quotes with a word of this text at the start of a word of the title (every word typed must match).
+     *
+     * @param  Builder<$this>  $query
+     * @return Builder<$this>
+     */
+    public function scopeWhereTitleStartsWith(Builder $query, string $text): Builder
+    {
+        return $this->scopeWhereBlindWords($query, ['title'], $text);
     }
 
     /**

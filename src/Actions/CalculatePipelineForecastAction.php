@@ -7,6 +7,8 @@ namespace Odden\Sales\Actions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Odden\Core\Encryption\EncryptedAmounts;
+use Odden\Core\Encryption\Index\DecryptedFilter;
+use Odden\Core\Encryption\Index\TooManyToFilter;
 use Odden\Sales\Enums\DealStatus;
 use Odden\Sales\Models\Deal;
 use Odden\Sales\Support\Money;
@@ -94,18 +96,19 @@ class CalculatePipelineForecastAction
         $averageDealSize = $amounts->average($baseQuery, 'amount');
         $averageWonDealSize = $wonCount > 0 ? $wonValue / $wonCount : 0.0;
 
-        // 6. Lost reasons breakdown, counted in the database; most frequent first
+        // 6. Lost reasons breakdown, most frequent first. The reasons are stored encrypted, so the lost deals are read and counted here.
         $lostReasons = [];
-        $reasonRows = (clone $lostQuery)
-            ->reorder()
-            ->toBase()
-            ->select("{$dealsTable}.lost_reason as reason")
-            ->selectRaw('count(*) as deal_count')
-            ->groupBy("{$dealsTable}.lost_reason")
-            ->get();
-        foreach ($reasonRows as $row) {
-            $reason = (string) $row->reason !== '' ? (string) $row->reason : 'unspecified';
-            $lostReasons[$reason] = ($lostReasons[$reason] ?? 0) + (int) $row->deal_count;
+
+        try {
+            $reasons = app(DecryptedFilter::class)->tally(clone $lostQuery, 'lost_reason');
+        } catch (TooManyToFilter) {
+            // Too many lost deals to decrypt for a breakdown: the counts above are still right.
+            $reasons = [];
+        }
+
+        foreach ($reasons as $reason => $count) {
+            $reason = (string) $reason !== '' ? (string) $reason : 'unspecified';
+            $lostReasons[$reason] = ($lostReasons[$reason] ?? 0) + $count;
         }
         uksort($lostReasons, fn (string $a, string $b): int => [$lostReasons[$b], $a] <=> [$lostReasons[$a], $b]);
 

@@ -7,6 +7,7 @@ namespace Odden\Sales\Models;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
+use Odden\Core\Encryption\Casts\EncryptedJson;
 use Odden\Sales\Enums\LeadRoutingStrategy;
 
 /**
@@ -96,7 +97,7 @@ class LeadRoutingRule extends Model
     {
         return [
             'strategy' => LeadRoutingStrategy::class,
-            'criteria' => 'array',
+            'criteria' => EncryptedJson::class.':lead_routing_rules.criteria',
             'assigned_user_ids' => 'array',
             'last_assigned_index' => 'integer',
             'is_active' => 'boolean',

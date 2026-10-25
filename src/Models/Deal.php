@@ -124,6 +124,7 @@ class Deal extends Model implements BlindIndexed
             'expected_close_date' => 'date',
             'closed_at' => 'datetime',
             'properties' => CustomProperties::class,
+            'lost_reason' => EncryptedString::class.':deals.lost_reason',
             'lost_notes' => EncryptedString::class.':deals.lost_notes',
             'name' => EncryptedString::class.':deals.name',
         ];

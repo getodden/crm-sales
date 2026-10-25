@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Odden\Core\Encryption\Casts\EncryptedString;
 use Odden\Sales\Database\Factories\DealProductFactory;
 
 /**
@@ -76,6 +77,8 @@ class DealProduct extends Model
     protected function casts(): array
     {
         return [
+            'name' => EncryptedString::class.':deal_products.name',
+            'description' => EncryptedString::class.':deal_products.description',
             'unit_price' => 'decimal:2',
             'quantity' => 'decimal:2',
             'discount_percent' => 'decimal:2',

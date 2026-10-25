@@ -7,6 +7,7 @@ namespace Odden\Sales\Models;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Odden\Core\Encryption\Casts\EncryptedString;
 use Odden\Sales\Enums\QuoteStatus;
 use Odden\Sales\Exceptions\QuoteLockedException;
 
@@ -69,6 +70,8 @@ class QuoteItem extends Model
     protected function casts(): array
     {
         return [
+            'name' => EncryptedString::class.':quote_items.name',
+            'description' => EncryptedString::class.':quote_items.description',
             'unit_price' => 'decimal:2',
             'quantity' => 'decimal:2',
             'discount_percent' => 'decimal:2',

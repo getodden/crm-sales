@@ -7,6 +7,7 @@ namespace Odden\Sales\Models;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Odden\Core\Encryption\Casts\EncryptedJson;
 use Odden\Sales\Enums\StageAutomationActionType;
 
 /**
@@ -56,7 +57,7 @@ class StageAutomation extends Model
     {
         return [
             'action_type' => StageAutomationActionType::class,
-            'action_payload' => 'array',
+            'action_payload' => EncryptedJson::class.':stage_automations.action_payload',
             'is_active' => 'boolean',
             'sort_order' => 'integer',
         ];
