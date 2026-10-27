@@ -95,7 +95,7 @@
 
         @media (min-width: 640px) {
             .parties-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
+                grid-template-columns: repeat(3, minmax(0, 1fr));
             }
         }
 
@@ -128,6 +128,16 @@
         }
 
         /* Items Table */
+        .items-scroll {
+            overflow-x: auto;
+        }
+
+        @media (max-width: 639px) {
+            .portal-body {
+                padding: 1.25rem;
+            }
+        }
+
         .items-table {
             width: 100%;
             border-collapse: collapse;
@@ -360,7 +370,7 @@
         <div class="portal-header">
             <div class="portal-title-block">
                 <h1>{{ $quote->title }}</h1>
-                <p>Proposal #{{ $quote->quote_number }} &bull; Deal: {{ $quote->deal?->name ?? 'Sales Contract' }}</p>
+                <p>Proposal #{{ $quote->quote_number }} from {{ config('app.name') }}</p>
             </div>
             <div>
                 @if ($quote->status === \Odden\Sales\Enums\QuoteStatus::Accepted)
@@ -392,8 +402,19 @@
             @php
                 $contact = $quote->deal?->contacts->first();
                 $company = $contact?->companies->first();
+                $rep = $quote->user ?? $quote->deal?->owner;
             @endphp
             <div class="parties-grid">
+                {{-- Who the proposal is from: the business, and the person to ask about it. --}}
+                <div class="party-col">
+                    <h2>From</h2>
+                    <div class="name">{{ config('app.name') }}</div>
+                    @if ($rep)
+                        <div class="detail">{{ $rep->name }}</div>
+                        <div class="detail">{{ $rep->email }}</div>
+                    @endif
+                </div>
+
                 <div class="party-col">
                     <h2>Prepared For</h2>
                     <div class="name">{{ $contact?->full_name ?? 'Client Representative' }}</div>
@@ -416,8 +437,8 @@
                 </div>
             </div>
 
-            {{-- Line Items Table --}}
-            <div>
+            {{-- Line Items Table: scrolls sideways on a narrow screen rather than cutting off the totals. --}}
+            <div class="items-scroll">
                 <table class="items-table">
                     <thead>
                         <tr>
@@ -436,7 +457,7 @@
                                         <div class="item-desc">{{ $item->description }}</div>
                                     @endif
                                 </td>
-                                <td class="num-col">{{ $item->quantity }}</td>
+                                <td class="num-col">{{ rtrim(rtrim(number_format((float) $item->quantity, 2, '.', ''), '0'), '.') }}</td>
                                 <td class="num-col">{{ $quote->currency }} {{ number_format((float) $item->unit_price, 2) }}</td>
                                 <td class="num-col" style="font-weight: 700;">
                                     {{ $quote->currency }} {{ number_format((float) $item->total_price, 2) }}

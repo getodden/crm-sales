@@ -46,12 +46,18 @@ class QuoteAcceptanceTest extends TestCase
             'public_token' => 'test-quote-token-xyz',
         ]);
 
+        $quote->items()->create(['name' => 'Annual licence', 'quantity' => 12, 'unit_price' => 100, 'total_price' => 1200]);
+        config(['app.name' => 'Northwind Supply']);
+
         $response = $this->get("/quotes/{$quote->public_token}");
 
         $response->assertSuccessful();
         $response->assertSee($quote->quote_number);
-        $response->assertSee('Acme Annual Agreement');
         $response->assertSee('Accept & Sign Proposal', false);
+        // Who it's from, in the seller's name; the deal's name is the seller's own bookkeeping.
+        $response->assertSee('from Northwind Supply');
+        $response->assertDontSee('Acme Annual Agreement');
+        $response->assertSee('<td class="num-col">12</td>', false);
     }
 
     public function test_can_accept_and_sign_quote_proposal(): void
