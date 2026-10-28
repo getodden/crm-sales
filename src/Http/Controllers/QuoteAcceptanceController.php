@@ -77,7 +77,7 @@ class QuoteAcceptanceController extends Controller
 
             return redirect()
                 ->route('odden.quotes.show', ['token' => $token])
-                ->with('status', 'Quote proposal accepted and successfully signed!');
+                ->with('status', 'Thank you. The quote is accepted and signed.');
         } catch (QuoteNotAcceptableException $e) {
             return redirect()
                 ->route('odden.quotes.show', ['token' => $token])
