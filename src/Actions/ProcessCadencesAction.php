@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Odden\Sales\Actions;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\LazyCollection;
@@ -36,6 +37,25 @@ class ProcessCadencesAction
     ];
 
     /**
+     * The active enrollments whose next step is due today or earlier: who a run would reach.
+     *
+     * @param  array<int, int|string>|null  $sequenceIds
+     * @return Builder<SalesSequenceEnrollment>
+     */
+    public function due(?array $sequenceIds = null): Builder
+    {
+        $today = Carbon::today()->toDateString();
+
+        return SalesSequenceEnrollment::query()
+            ->where('status', 'active')
+            ->when($sequenceIds !== null, fn ($q) => $q->whereIn('sequence_id', $sequenceIds))
+            ->where(function ($q) use ($today): void {
+                $q->whereNull('next_step_due_at')
+                    ->orWhereDate('next_step_due_at', '<=', $today);
+            });
+    }
+
+    /**
      * Process due steps across all active sales sequence enrollments, or only those in the given sequences.
      *
      * @param  array<int, int|string>|null  $sequenceIds  Only process enrollments in these sequences (null: all).
@@ -50,7 +70,6 @@ class ProcessCadencesAction
      */
     public function execute(?array $sequenceIds = null): array
     {
-        $todayStr = Carbon::today()->toDateString();
 
         $stats = [
             'processed' => 0,
@@ -63,13 +82,7 @@ class ProcessCadencesAction
 
         // In chunks (by id, so the status changes below don't make it skip rows) rather than all at once.
         /** @var LazyCollection<int, SalesSequenceEnrollment> $dueEnrollments */
-        $dueEnrollments = SalesSequenceEnrollment::query()
-            ->where('status', 'active')
-            ->when($sequenceIds !== null, fn ($q) => $q->whereIn('sequence_id', $sequenceIds))
-            ->where(function ($q) use ($todayStr): void {
-                $q->whereNull('next_step_due_at')
-                    ->orWhereDate('next_step_due_at', '<=', $todayStr);
-            })
+        $dueEnrollments = $this->due($sequenceIds)
             ->with(['contact.companies', 'sequence.user', 'enrolledBy'])
             ->lazyById(200);
 
