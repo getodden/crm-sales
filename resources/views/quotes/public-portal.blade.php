@@ -285,7 +285,7 @@
         }
 
         .sig-input:focus {
-            border-color: #2563eb;
+            border-color: var(--odden-accent, #2563eb);
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
         }
 
@@ -316,7 +316,7 @@
             justify-content: center;
             padding: 0.75rem 1.5rem;
             border-radius: 0.375rem;
-            background: #0d9488;
+            background: var(--odden-accent, #0d9488);
             color: #ffffff;
             font-size: 0.9375rem;
             font-weight: 700;
@@ -327,7 +327,7 @@
         }
 
         .btn-accept:hover {
-            background: #0f766e;
+            background: var(--odden-accent-hover, #0f766e);
         }
 
         .alert-banner {
@@ -363,12 +363,14 @@
             }
         }
     </style>
+    @include('odden-sales::partials.branding')
 </head>
 <body>
     <div class="portal-container">
         {{-- Header --}}
         <div class="portal-header">
             <div class="portal-title-block">
+                @include('odden-sales::partials.logo')
                 <h1>{{ $quote->title }}</h1>
                 <p>Proposal #{{ $quote->quote_number }} from {{ config('app.name') }}</p>
             </div>

@@ -54,7 +54,7 @@
             width: 3.5rem;
             height: 3.5rem;
             border-radius: 9999px;
-            background: #0284c7;
+            background: var(--odden-accent, #0284c7);
             color: #ffffff;
             display: flex;
             align-items: center;
@@ -123,7 +123,7 @@
         }
 
         .form-input:focus {
-            border-color: #0284c7;
+            border-color: var(--odden-accent, #0284c7);
             box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.1);
         }
 
@@ -145,21 +145,21 @@
             border-radius: 0.375rem;
             font-size: 0.8125rem;
             font-weight: 600;
-            color: #0284c7;
+            color: var(--odden-accent, #0284c7);
             cursor: pointer;
             transition: all 0.15s ease;
         }
 
         .slot-radio:checked + .slot-btn {
-            background: #0284c7;
+            background: var(--odden-accent, #0284c7);
             color: #ffffff;
-            border-color: #0284c7;
+            border-color: var(--odden-accent, #0284c7);
         }
 
         .btn-book {
             padding: 0.75rem 1.25rem;
             border-radius: 0.375rem;
-            background: #0d9488;
+            background: var(--odden-accent, #0d9488);
             color: #ffffff;
             font-size: 0.9375rem;
             font-weight: 700;
@@ -171,7 +171,7 @@
         }
 
         .btn-book:hover {
-            background: #0f766e;
+            background: var(--odden-accent-hover, #0f766e);
         }
 
         .alert-error {
@@ -231,11 +231,13 @@
             margin-bottom: 1.25rem;
         }
     </style>
+    @include('odden-sales::partials.branding')
 </head>
 <body>
     <div class="booking-card">
         {{-- Rep & Meeting Info --}}
         <div class="rep-info-col">
+            @include('odden-sales::partials.logo')
             <div class="rep-avatar">
                 {{ strtoupper(substr($link->user->name, 0, 2)) }}
             </div>
