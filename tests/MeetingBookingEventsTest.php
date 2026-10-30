@@ -81,6 +81,32 @@ it('keeps the booking when a listener throws', function (): void {
     expect(SalesMeetingBooking::query()->whereKey($booking->id)->exists())->toBeTrue();
 });
 
+it('runs the other listeners when one throws', function (): void {
+    $seen = [];
+    Event::listen(MeetingBooked::class, function (): void {
+        throw new RuntimeException('calendar is down');
+    });
+    Event::listen(MeetingBooked::class, function (MeetingBooked $event) use (&$seen): void {
+        $seen[] = $event->uid;
+    });
+
+    $booking = ($this->book)()['booking'];
+
+    expect($seen)->toBe([$booking->uid]);
+});
+
+it('stops at a listener that returns false, as Event::dispatch does', function (): void {
+    $seen = [];
+    Event::listen(MeetingBooked::class, fn (): bool => false);
+    Event::listen(MeetingBooked::class, function (MeetingBooked $event) use (&$seen): void {
+        $seen[] = $event->uid;
+    });
+
+    ($this->book)();
+
+    expect($seen)->toBe([]);
+});
+
 it('fires MeetingBookingCancelled once, and not again for a second cancel', function (): void {
     $booking = ($this->book)()['booking'];
     Event::fake([MeetingBookingCancelled::class]);

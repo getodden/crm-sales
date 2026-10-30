@@ -133,6 +133,60 @@ it('cancels a published invite by publishing it again when the host has no email
         ->and(app(MeetingInvite::class)->cancelIcs($booking))->toContain('METHOD:PUBLISH')->toContain('STATUS:CANCELLED')->toContain('SEQUENCE:1')->not->toContain('ORGANIZER');
 });
 
+it('still sends the invitee their cancellation when the host user no longer exists', function (): void {
+    SalesMeetingBooking::query()->whereKey($this->booking->id)->update(['user_id' => User::query()->max('id') + 1000]);
+
+    $this->booking->fresh()->cancel(MeetingCancelledBy::Invitee);
+
+    $queued = Mail::queued(MeetingCancelledMail::class);
+    expect($queued)->toHaveCount(1);
+
+    $sent = unserialize(serialize($queued->first()));
+
+    expect($sent->recipientRole)->toBe('invitee')
+        ->and($sent->hasTo('dana@example.com'))->toBeTrue()
+        ->and($sent->render())->toContain('Discovery call')
+        ->and(app(MeetingInvite::class)->cancelIcs($sent->booking))->toContain('METHOD:PUBLISH')->toContain('STATUS:CANCELLED')->not->toContain('ORGANIZER');
+});
+
+it('still sends the invitee their confirmation when the host user is deleted before the queue sends it', function (): void {
+    $queued = Mail::queued(MeetingBookedMail::class, fn (MeetingBookedMail $mail): bool => $mail->recipientRole === 'invitee')->first();
+    $payload = serialize($queued);
+    SalesMeetingBooking::query()->whereKey($this->booking->id)->update(['user_id' => User::query()->max('id') + 1000]);
+
+    $sent = unserialize($payload);
+
+    expect($sent->render())->toContain('Discovery call')
+        ->and($sent->envelope()->subject)->toContain('with your host');
+});
+
+it('keeps the cancel link working when the booking page moves to another host', function (): void {
+    URL::forceRootUrl('http://old.odden.test');
+    $url = (new MeetingBookedMail($this->booking, 'invitee'))->cancelUrl;
+    URL::forceRootUrl(null);
+
+    expect($url)->toStartWith('http://old.odden.test/meet/bookings/');
+
+    $moved = str_replace('http://old.odden.test', 'http://new.odden.test', (string) $url);
+
+    $this->get($moved)->assertOk()->assertSee('Cancel this meeting');
+    $this->post($moved)->assertRedirect($moved);
+    expect($this->booking->fresh()->cancelled_at)->not->toBeNull();
+});
+
+it('still accepts a cancel link signed with its host, as v0.10.25 sent', function (): void {
+    $this->get(($this->cancelUrl)())->assertOk()->assertSee('Cancel this meeting');
+});
+
+it('returns 404 for a relative link with a tampered uid or signature', function (): void {
+    $url = (new MeetingBookedMail($this->booking, 'invitee'))->cancelUrl;
+
+    $this->get(str_replace($this->booking->uid, (string) Str::uuid(), (string) $url))->assertNotFound();
+    $this->get($url.'0')->assertNotFound();
+    $this->post($url.'0')->assertNotFound();
+    expect($this->booking->fresh()->cancelled_at)->toBeNull();
+});
+
 it('shows the cancel page on GET without cancelling anything', function (): void {
     Event::fake([MeetingBookingCancelled::class]);
 

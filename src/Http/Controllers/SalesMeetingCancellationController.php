@@ -14,6 +14,9 @@ use Odden\Sales\Models\SalesMeetingBooking;
 /**
  * The invitee's cancel page. The URL is signed (the booking's uid and a signature made with the app key), so it
  * cannot be guessed or edited, and anything that fails the signature is a 404. Opening it never cancels: only the POST does.
+ *
+ * The signature covers the path and query, not the host, so the link keeps working if the booking page moves to another host.
+ * Links signed with the host (sent by v0.10.25) are still accepted.
  */
 class SalesMeetingCancellationController extends Controller
 {
@@ -49,7 +52,7 @@ class SalesMeetingCancellationController extends Controller
 
     private function booking(Request $request, string $uid): SalesMeetingBooking
     {
-        abort_unless($request->hasValidSignature(), 404);
+        abort_unless($request->hasValidRelativeSignature() || $request->hasValidSignature(), 404);
 
         return SalesMeetingBooking::query()
             ->where('uid', $uid)

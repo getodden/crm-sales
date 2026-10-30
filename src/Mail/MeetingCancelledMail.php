@@ -22,7 +22,8 @@ use Odden\Sales\Services\MeetingInvite;
  * Tells the invitee or the host that a booked meeting was cancelled, with an .ics (METHOD:CANCEL) that removes it from their calendar.
  *
  * Unlike the other mails it carries a copy of the booking, its link and its host, not model identifiers: a cancelled booking no longer
- * blocks deleting its link, and deleting the link deletes its bookings, often before the queue sends this.
+ * blocks deleting its link, and deleting the link deletes its bookings, often before the queue sends this. The host may be gone too
+ * (a booking's user_id has no foreign key), in which case the mail is still built, without host details.
  */
 class MeetingCancelledMail extends Mailable implements ShouldBeEncrypted, ShouldQueue
 {
@@ -49,22 +50,22 @@ class MeetingCancelledMail extends Mailable implements ShouldBeEncrypted, Should
     private static function snapshot(SalesMeetingBooking $booking): SalesMeetingBooking
     {
         $link = $booking->meetingLink;
-        $host = $booking->user;
+        $host = $booking->host();
 
         return $booking->withoutRelations()->setRelations([
             'meetingLink' => $link->newInstance([], true)->setRawAttributes(Arr::only($link->getAttributes(), [$link->getKeyName(), 'title', 'description', 'slug'])),
-            'user' => $host->newInstance([], true)->setRawAttributes(Arr::only($host->getAttributes(), [$host->getKeyName(), 'name', 'email'])),
+            'user' => $host === null ? null : $host->newInstance([], true)->setRawAttributes(Arr::only($host->getAttributes(), [$host->getKeyName(), 'name', 'email'])),
         ]);
     }
 
     public function envelope(): Envelope
     {
         $booking = $this->booking;
-        $hostName = UserModel::displayName($booking->user, 'your host');
+        $hostName = UserModel::displayName($booking->host(), 'your host');
         $when = $booking->starts_at->copy()->setTimezone($booking->timezone)->format('D, M j \a\t g:i A');
 
         $from = self::configuredFrom();
-        $hostEmail = $booking->user->getAttribute('email');
+        $hostEmail = $booking->host()?->getAttribute('email');
 
         $replyTo = $this->recipientRole === 'host'
             ? [new Address($booking->invitee_email, $booking->invitee_name)]
@@ -80,7 +81,7 @@ class MeetingCancelledMail extends Mailable implements ShouldBeEncrypted, Should
     public function content(): Content
     {
         $booking = $this->booking;
-        $hostName = UserModel::displayName($booking->user, 'your host');
+        $hostName = UserModel::displayName($booking->host(), 'your host');
 
         return new Content(
             view: 'odden-sales::mail.meeting-cancelled',

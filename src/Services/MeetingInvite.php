@@ -30,8 +30,8 @@ class MeetingInvite
     private function build(SalesMeetingBooking $booking, bool $cancelled): string
     {
         $link = $booking->meetingLink;
-        $host = $booking->user;
-        $hostEmail = $host->getAttribute('email');
+        $host = $booking->host();
+        $hostEmail = $host?->getAttribute('email');
         $hostEmail = is_string($hostEmail) && $hostEmail !== '' ? $hostEmail : null;
         $hostName = UserModel::displayName($host, $hostEmail ?? 'Host');
 
@@ -71,7 +71,7 @@ class MeetingInvite
      */
     public function method(SalesMeetingBooking $booking): string
     {
-        $hostEmail = $booking->user->getAttribute('email');
+        $hostEmail = $booking->host()?->getAttribute('email');
 
         return is_string($hostEmail) && $hostEmail !== '' ? 'REQUEST' : 'PUBLISH';
     }

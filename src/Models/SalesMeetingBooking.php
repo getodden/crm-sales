@@ -102,6 +102,16 @@ class SalesMeetingBooking extends Model
     }
 
     /**
+     * The host, or null when that user has been deleted (`user_id` has no foreign key).
+     */
+    public function host(): ?Model
+    {
+        $host = $this->getRelationValue('user');
+
+        return $host instanceof Model ? $host : null;
+    }
+
+    /**
      * @return BelongsTo<Contact, $this>
      */
     public function contact(): BelongsTo

@@ -26,8 +26,9 @@ class MeetingBookedMail extends Mailable implements ShouldBeEncrypted, ShouldQue
     use ConfiguresSalesMail, Queueable, SerializesModels;
 
     /**
-     * The invitee's signed cancel link (null in the host's copy). Built when the mail is created, during the booking, so it has the
-     * host the booking page was opened on: the signature covers the host, and a queue worker would build it with the app URL instead.
+     * The invitee's cancel link (null in the host's copy): a full URL on the host the booking page was opened on, whose signature covers
+     * only the path, so the link survives the booking page moving to another host. Built when the mail is created, during the booking,
+     * because a queue worker would build it with the app URL instead.
      */
     public ?string $cancelUrl;
 
@@ -39,7 +40,7 @@ class MeetingBookedMail extends Mailable implements ShouldBeEncrypted, ShouldQue
         public string $recipientRole = 'invitee',
     ) {
         $this->cancelUrl = $recipientRole === 'invitee'
-            ? URL::signedRoute('odden.meetings.cancel.show', ['uid' => $booking->uid])
+            ? URL::to(URL::signedRoute('odden.meetings.cancel.show', ['uid' => $booking->uid], absolute: false))
             : null;
         $this->configureSalesMail();
     }
@@ -48,11 +49,11 @@ class MeetingBookedMail extends Mailable implements ShouldBeEncrypted, ShouldQue
     {
         $booking = $this->booking;
         $link = $booking->meetingLink;
-        $hostName = UserModel::displayName($booking->user, 'your host');
+        $hostName = UserModel::displayName($booking->host(), 'your host');
         $when = $booking->starts_at->copy()->setTimezone($booking->timezone)->format('D, M j \a\t g:i A');
 
         $from = self::configuredFrom();
-        $hostEmail = $booking->user->getAttribute('email');
+        $hostEmail = $booking->host()?->getAttribute('email');
 
         $replyTo = $this->recipientRole === 'host'
             ? [new Address($booking->invitee_email, $booking->invitee_name)]
@@ -76,7 +77,7 @@ class MeetingBookedMail extends Mailable implements ShouldBeEncrypted, ShouldQue
             with: [
                 'booking' => $booking,
                 'link' => $booking->meetingLink,
-                'hostName' => UserModel::displayName($booking->user, 'your host'),
+                'hostName' => UserModel::displayName($booking->host(), 'your host'),
                 'recipientRole' => $this->recipientRole,
                 'cancelUrl' => $this->cancelUrl,
                 'startsAt' => $booking->starts_at->copy()->setTimezone($booking->timezone),

@@ -10,7 +10,8 @@ use Odden\Sales\Mail\SalesMail;
 
 /**
  * Emails the invitee and the host when a booking is cancelled. MeetingBookingCancelled fires once per
- * booking, from whichever path cancelled it, so both paths send the same mail and a second cancel sends none.
+ * booking, from whichever path cancelled it, so both paths send the same mail and a second cancel sends none. The invitee's mail
+ * does not depend on the host: a host that no longer exists gets no copy.
  */
 class SendMeetingCancellationMails
 {
@@ -23,7 +24,7 @@ class SendMeetingCancellationMails
             new MeetingCancelledMail($booking, 'invitee', $event->cancelledBy, $event->actorName, $event->reason)
         );
 
-        $hostEmail = $booking->user->getAttribute('email');
+        $hostEmail = $booking->host()?->getAttribute('email');
 
         if (is_string($hostEmail) && $hostEmail !== '') {
             SalesMail::to($hostEmail)->queue(
