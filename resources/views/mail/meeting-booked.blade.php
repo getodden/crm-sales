@@ -22,5 +22,9 @@
     @endif
 
     <p>The attached calendar invite (invite.ics) adds the meeting to your calendar.</p>
+
+    @if ($cancelUrl)
+        <p>Can't make it? <a href="{{ $cancelUrl }}">Cancel this meeting</a>.</p>
+    @endif
 </body>
 </html>

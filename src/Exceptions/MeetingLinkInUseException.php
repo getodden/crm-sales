@@ -15,7 +15,7 @@ class MeetingLinkInUseException extends LogicException
     public function __construct(public readonly int $upcomingBookings)
     {
         parent::__construct(sprintf(
-            'This link has %d upcoming %s. Turn the link off instead, or wait until they have passed.',
+            'This link has %d upcoming %s. Cancel them, or wait until they have passed. Turn the link off to stop new bookings.',
             $upcomingBookings,
             $upcomingBookings === 1 ? 'booking' : 'bookings',
         ));

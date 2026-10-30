@@ -21,7 +21,9 @@ use Odden\Sales\Console\Commands\ExpireStaleQuotesCommand;
 use Odden\Sales\Console\Commands\ProcessCadencesCommand;
 use Odden\Sales\Contracts\ExternalBusyTime;
 use Odden\Sales\Demo\SalesDemoSeeder;
+use Odden\Sales\Events\MeetingBookingCancelled;
 use Odden\Sales\Listeners\MoveMergedRecords;
+use Odden\Sales\Listeners\SendMeetingCancellationMails;
 use Odden\Sales\Models\Deal;
 use Odden\Sales\Models\Quote;
 use Odden\Sales\Models\SalesSequenceEnrollment;
@@ -145,6 +147,8 @@ class SalesServiceProvider extends ServiceProvider
 
         // Synchronous on purpose: runs inside Core's merge transaction.
         Event::listen(ContactsMerged::class, [MoveMergedRecords::class, 'handleContactsMerged']);
+
+        Event::listen(MeetingBookingCancelled::class, [SendMeetingCancellationMails::class, 'handle']);
 
         if ($this->app->runningInConsole()) {
             $this->commands([

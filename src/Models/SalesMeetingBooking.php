@@ -12,6 +12,7 @@ use Odden\Core\Encryption\Casts\EncryptedString;
 use Odden\Core\Models\Activity;
 use Odden\Core\Models\Contact;
 use Odden\Core\Support\UserModel;
+use Odden\Sales\Enums\MeetingCancelledBy;
 use Odden\Sales\Events\MeetingBookingCancelled;
 use Odden\Sales\Support\DispatchesAfterCommit;
 
@@ -142,8 +143,10 @@ class SalesMeetingBooking extends Model
      *
      * The update only matches a row that is still active, so when two requests cancel the same booking at
      * once only the one that changed the row fires; the other takes the stored cancellation time.
+     *
+     * $actorName and $reason are passed to the event for the cancellation emails; they are not stored.
      */
-    public function cancel(): self
+    public function cancel(MeetingCancelledBy $by = MeetingCancelledBy::Staff, ?string $actorName = null, ?string $reason = null): self
     {
         if ($this->cancelled_at !== null) {
             return $this;
@@ -165,7 +168,10 @@ class SalesMeetingBooking extends Model
         $this->forceFill(['cancelled_at' => $now, self::UPDATED_AT => $now])
             ->syncOriginalAttributes(['cancelled_at', self::UPDATED_AT]);
 
-        DispatchesAfterCommit::dispatch(new MeetingBookingCancelled($this, $this->uid));
+        // Loaded now, inside the caller's transaction: the listener runs after commit, when the link may already be deleted.
+        $this->loadMissing(['meetingLink', 'user']);
+
+        DispatchesAfterCommit::dispatch(new MeetingBookingCancelled($this, $this->uid, $by, $actorName, $reason));
 
         return $this;
     }
