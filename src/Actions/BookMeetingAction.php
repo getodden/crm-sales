@@ -15,6 +15,7 @@ use Odden\Core\Enums\LeadStatus;
 use Odden\Core\Models\Activity;
 use Odden\Core\Models\Contact;
 use Odden\Core\Support\ContactLookup;
+use Odden\Sales\Events\MeetingBooked;
 use Odden\Sales\Exceptions\MeetingBookingLimitException;
 use Odden\Sales\Exceptions\MeetingSlotUnavailableException;
 use Odden\Sales\Mail\MeetingBookedMail;
@@ -23,6 +24,7 @@ use Odden\Sales\Models\SalesMeetingBooking;
 use Odden\Sales\Models\SalesMeetingLink;
 use Odden\Sales\Models\SalesSequenceEnrollment;
 use Odden\Sales\Services\MeetingAvailability;
+use Odden\Sales\Support\DispatchesAfterCommit;
 
 class BookMeetingAction
 {
@@ -233,6 +235,8 @@ class BookMeetingAction
         if (is_string($hostEmail) && $hostEmail !== '') {
             SalesMail::to($hostEmail)->queue(new MeetingBookedMail($booking, 'host'));
         }
+
+        DispatchesAfterCommit::dispatch(new MeetingBooked($booking, $booking->uid));
 
         return [
             'contact' => $contact,

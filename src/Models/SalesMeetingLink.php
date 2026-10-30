@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Odden\Core\Support\UserModel;
+use Odden\Sales\Exceptions\MeetingLinkInUseException;
 
 /**
  * @property int $id
@@ -45,6 +46,21 @@ class SalesMeetingLink extends Model
         'timezone',
         'is_active',
     ];
+
+    /**
+     * Bootstrap the model and its events.
+     */
+    protected static function booted(): void
+    {
+        // Deleting the link deletes its bookings without cancelling them; upcoming ones must be cancelled or pass first.
+        static::deleting(function (self $link): void {
+            $upcoming = $link->upcomingBookingsCount();
+
+            if ($upcoming > 0) {
+                throw new MeetingLinkInUseException($upcoming);
+            }
+        });
+    }
 
     /**
      * Get the table associated with the model.
@@ -89,6 +105,14 @@ class SalesMeetingLink extends Model
     public function bookings(): HasMany
     {
         return $this->hasMany(SalesMeetingBooking::class, 'meeting_link_id');
+    }
+
+    /**
+     * Bookings that are not cancelled and have not ended yet. They block deleting the link.
+     */
+    public function upcomingBookingsCount(): int
+    {
+        return $this->bookings()->upcoming()->count();
     }
 
     /**

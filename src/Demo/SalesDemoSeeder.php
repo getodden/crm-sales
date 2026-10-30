@@ -8,7 +8,9 @@ use Illuminate\Support\Str;
 use Odden\Core\Demo\CoreDemoSeeder;
 use Odden\Core\Demo\DemoContext;
 use Odden\Core\Demo\DemoSeeder;
+use Odden\Core\Demo\PreparesDemoRemoval;
 use Odden\Core\Models\Contact;
+use Odden\Core\Models\DemoRecord;
 use Odden\Sales\Enums\DealStatus;
 use Odden\Sales\Enums\QuotaPeriod;
 use Odden\Sales\Models\Deal;
@@ -16,6 +18,7 @@ use Odden\Sales\Models\Pipeline;
 use Odden\Sales\Models\PipelineStage;
 use Odden\Sales\Models\Quote;
 use Odden\Sales\Models\SalesEmailTemplate;
+use Odden\Sales\Models\SalesMeetingBooking;
 use Odden\Sales\Models\SalesMeetingLink;
 use Odden\Sales\Models\SalesPlaybook;
 use Odden\Sales\Models\SalesQuota;
@@ -25,7 +28,7 @@ use Odden\Sales\Models\SalesSequenceEnrollment;
 /**
  * Sample pipeline, deals, templates, cadences, quotas and quotes, attached to the sample companies and contacts from Core.
  */
-final class SalesDemoSeeder implements DemoSeeder
+final class SalesDemoSeeder implements DemoSeeder, PreparesDemoRemoval
 {
     public function module(): string
     {
@@ -45,6 +48,20 @@ final class SalesDemoSeeder implements DemoSeeder
         $this->quotas($context);
         $this->quotes($context, $deals);
         $this->ownerTools($context);
+    }
+
+    /**
+     * Anyone can book the sample booking page, and a link with upcoming bookings refuses to be deleted. Cancelling them here lets the
+     * sample data go and fires MeetingBookingCancelled for each, so no booking disappears unannounced.
+     */
+    public function prepareRemoval(): void
+    {
+        $sampleLinks = DemoRecord::query()->where('model_type', (new SalesMeetingLink)->getMorphClass())->pluck('model_id')->map(fn (string $id): int => (int) $id);
+
+        SalesMeetingBooking::query()
+            ->whereIn('meeting_link_id', $sampleLinks)
+            ->upcoming()
+            ->each(fn (SalesMeetingBooking $booking): SalesMeetingBooking => $booking->cancel());
     }
 
     /**

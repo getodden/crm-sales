@@ -12,12 +12,14 @@ use Odden\Core\Encryption\Casts\EncryptedString;
 use Odden\Core\Models\Activity;
 use Odden\Core\Models\Contact;
 use Odden\Core\Support\UserModel;
+use Odden\Sales\Events\MeetingBookingCancelled;
+use Odden\Sales\Support\DispatchesAfterCommit;
 
 /**
  * A slot booked on a meeting link. Active (not cancelled) bookings block the host's calendar.
  *
  * @property int $id
- * @property string $uid
+ * @property string $uid Stable key of the booking: the .ics event UID, and what an external calendar should key on.
  * @property int $meeting_link_id
  * @property int $user_id
  * @property int|null $contact_id
@@ -125,11 +127,45 @@ class SalesMeetingBooking extends Model
     }
 
     /**
-     * Free the slot. The meeting activity is left for the rep to update.
+     * Active bookings that have not ended yet, the ones in progress included.
+     *
+     * @param  Builder<SalesMeetingBooking>  $query
+     */
+    public function scopeUpcoming(Builder $query): void
+    {
+        $query->whereNull('cancelled_at')->where('ends_at', '>', now());
+    }
+
+    /**
+     * Free the slot and fire MeetingBookingCancelled after commit. Cancelling a cancelled booking
+     * changes nothing and fires nothing. The meeting activity is left for the rep to update.
+     *
+     * The update only matches a row that is still active, so when two requests cancel the same booking at
+     * once only the one that changed the row fires; the other takes the stored cancellation time.
      */
     public function cancel(): self
     {
-        $this->update(['cancelled_at' => now()]);
+        if ($this->cancelled_at !== null) {
+            return $this;
+        }
+
+        $now = $this->freshTimestamp();
+        $changed = static::query()
+            ->whereKey($this->getKey())
+            ->whereNull('cancelled_at')
+            ->update(['cancelled_at' => $now, self::UPDATED_AT => $now]);
+
+        if ($changed === 0) {
+            $this->forceFill(['cancelled_at' => static::query()->whereKey($this->getKey())->value('cancelled_at')])
+                ->syncOriginalAttribute('cancelled_at');
+
+            return $this;
+        }
+
+        $this->forceFill(['cancelled_at' => $now, self::UPDATED_AT => $now])
+            ->syncOriginalAttributes(['cancelled_at', self::UPDATED_AT]);
+
+        DispatchesAfterCommit::dispatch(new MeetingBookingCancelled($this, $this->uid));
 
         return $this;
     }
