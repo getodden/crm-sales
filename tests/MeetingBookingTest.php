@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use Carbon\CarbonImmutable;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\MailManager;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Odden\Core\Enums\ActivityType;
@@ -12,12 +15,14 @@ use Odden\Core\Events\ContactCreated;
 use Odden\Core\Models\Activity;
 use Odden\Core\Models\Contact;
 use Odden\Sales\Actions\BookMeetingAction;
+use Odden\Sales\Contracts\ExternalBusyTime;
 use Odden\Sales\Exceptions\MeetingSlotUnavailableException;
 use Odden\Sales\Mail\MeetingBookedMail;
 use Odden\Sales\Models\SalesMeetingBooking;
 use Odden\Sales\Models\SalesMeetingLink;
 use Odden\Sales\Services\MeetingAvailability;
 use Odden\Sales\Services\MeetingInvite;
+use Odden\Sales\Services\NoExternalBusyTime;
 use Odden\Sales\Tests\Fixtures\User;
 
 beforeEach(function (): void {
@@ -346,4 +351,104 @@ it('does not create a contact when the slot is not available', function (): void
 
     Event::assertNotDispatched(ContactCreated::class);
     expect(Contact::query()->count())->toBe(0);
+});
+
+describe('external busy time', function (): void {
+    $bindExternal = function (array $periods, ?Closure $onCall = null): void {
+        app()->bind(ExternalBusyTime::class, fn () => new class($periods, $onCall) implements ExternalBusyTime
+        {
+            public function __construct(private array $periods, private ?Closure $onCall) {}
+
+            public function busyPeriods(SalesMeetingLink $link, CarbonImmutable $from, CarbonImmutable $to): array
+            {
+                if ($this->onCall !== null) {
+                    ($this->onCall)($from, $to);
+                }
+
+                return $this->periods;
+            }
+        });
+    };
+
+    $at = fn (string $time): int => Carbon::parse("2030-01-07 {$time}", 'UTC')->getTimestamp();
+
+    it('changes nothing with the default binding', function (): void {
+        $link = ($this->makeLink)();
+
+        expect(app(ExternalBusyTime::class))->toBeInstanceOf(NoExternalBusyTime::class)
+            ->and(($this->times)($link, '2030-01-07'))->toBe(['09:00', '09:30', '10:00']);
+    });
+
+    it('removes slots overlapping an external period', function () use ($bindExternal, $at): void {
+        $link = ($this->makeLink)();
+        $bindExternal([[$at('09:15'), $at('09:45')]]);
+
+        expect(($this->times)($link, '2030-01-07'))->toBe(['10:00']);
+    });
+
+    it('keeps the link buffer clear around an external period', function () use ($bindExternal, $at): void {
+        $link = ($this->makeLink)(['working_hours' => ['monday' => ['09:00-12:00']], 'buffer_minutes' => 15]);
+        $bindExternal([[$at('10:00'), $at('10:30')]]);
+
+        expect(($this->times)($link, '2030-01-07'))->toBe(['09:00', '11:15']);
+    });
+
+    it('refuses to book a slot that clashes with an external period', function () use ($bindExternal, $at): void {
+        $link = ($this->makeLink)();
+        $bindExternal([[$at('09:00'), $at('09:30')]]);
+
+        expect(fn () => app(BookMeetingAction::class)->execute($link, 'Dana Scully', 'dana@example.com', Carbon::parse('2030-01-07 09:00')))
+            ->toThrow(MeetingSlotUnavailableException::class);
+
+        expect(SalesMeetingBooking::query()->count())->toBe(0);
+
+        app(BookMeetingAction::class)->execute($link, 'Dana Scully', 'dana@example.com', Carbon::parse('2030-01-07 09:30'));
+
+        expect(SalesMeetingBooking::query()->count())->toBe(1);
+    });
+
+    it('never asks the external source while holding the booking lock', function () use ($bindExternal): void {
+        $link = ($this->makeLink)();
+        $transactionLevels = [];
+        $bindExternal([], function () use (&$transactionLevels): void {
+            $transactionLevels[] = DB::transactionLevel();
+        });
+
+        $outsideBooking = DB::transactionLevel();
+
+        app(BookMeetingAction::class)->execute($link, 'Dana Scully', 'dana@example.com', Carbon::parse('2030-01-07 09:00'));
+
+        expect(SalesMeetingBooking::query()->count())->toBe(1)
+            ->and($transactionLevels)->toBe([$outsideBooking]);
+    });
+
+    it('skips a day blocked externally and asks the source once for the window', function () use ($bindExternal, $at): void {
+        $link = ($this->makeLink)(['working_hours' => ['monday' => ['09:00-10:00']]]);
+        $calls = 0;
+        $bindExternal([[$at('00:00'), $at('23:59')]], function () use (&$calls): void {
+            $calls++;
+        });
+
+        expect(app(MeetingAvailability::class)->firstAvailableDate($link))->toBe('2030-01-14')
+            ->and($calls)->toBe(1);
+    });
+
+    it('treats a throwing implementation as no external periods', function (): void {
+        $link = ($this->makeLink)();
+        app()->bind(ExternalBusyTime::class, fn () => new class implements ExternalBusyTime
+        {
+            public function busyPeriods(SalesMeetingLink $link, CarbonImmutable $from, CarbonImmutable $to): array
+            {
+                throw new RuntimeException('provider down');
+            }
+        });
+
+        $reported = [];
+        app(ExceptionHandler::class)->reportable(function (RuntimeException $e) use (&$reported): void {
+            $reported[] = $e->getMessage();
+        })->stop();
+
+        expect(($this->times)($link, '2030-01-07'))->toBe(['09:00', '09:30', '10:00'])
+            ->and($reported)->toBe(['provider down']);
+    });
 });

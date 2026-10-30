@@ -19,6 +19,7 @@ use Odden\Core\Registry\ActionRegistry;
 use Odden\Core\Support\ModelRegistry;
 use Odden\Sales\Console\Commands\ExpireStaleQuotesCommand;
 use Odden\Sales\Console\Commands\ProcessCadencesCommand;
+use Odden\Sales\Contracts\ExternalBusyTime;
 use Odden\Sales\Demo\SalesDemoSeeder;
 use Odden\Sales\Listeners\MoveMergedRecords;
 use Odden\Sales\Models\Deal;
@@ -27,6 +28,7 @@ use Odden\Sales\Models\SalesSequenceEnrollment;
 use Odden\Sales\Registry\MoveDealStage;
 use Odden\Sales\Registry\SearchDeals;
 use Odden\Sales\Services\EloquentDealGateway;
+use Odden\Sales\Services\NoExternalBusyTime;
 
 class SalesServiceProvider extends ServiceProvider
 {
@@ -41,6 +43,7 @@ class SalesServiceProvider extends ServiceProvider
         );
 
         $this->app->bind(DealGateway::class, EloquentDealGateway::class);
+        $this->app->bind(ExternalBusyTime::class, NoExternalBusyTime::class);
 
         $this->callAfterResolving(ModelRegistry::class, function (ModelRegistry $registry): void {
             $registry->discover(__DIR__.'/Models', 'Odden\\Sales\\Models');

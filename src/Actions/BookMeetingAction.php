@@ -56,8 +56,8 @@ class BookMeetingAction
         $email = ContactLookup::normalizeEmail($email);
         $fullName = $this->plainName($fullName, $email);
 
-        // Checked again under the lock below; this only avoids creating a contact for a slot that is
-        // already gone.
+        // The only check against the host's external busy time. Bookings are checked again under the
+        // lock below; this also avoids creating a contact for a slot that is already gone.
         if (! $this->availability->isAvailable($link, $scheduledAt)) {
             throw MeetingSlotUnavailableException::at($scheduledAt);
         }
@@ -155,7 +155,7 @@ class BookMeetingAction
     ): array {
         SalesMeetingLink::query()->where('user_id', $link->user_id)->lockForUpdate()->get(['id']);
 
-        if (! $this->availability->isAvailable($link, $scheduledAt)) {
+        if (! $this->availability->isAvailable($link, $scheduledAt, withExternal: false)) {
             throw MeetingSlotUnavailableException::at($scheduledAt);
         }
 
