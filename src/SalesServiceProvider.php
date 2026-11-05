@@ -16,6 +16,7 @@ use Odden\Core\Events\ContactsMerged;
 use Odden\Core\Models\Company;
 use Odden\Core\Models\Contact;
 use Odden\Core\Registry\ActionRegistry;
+use Odden\Core\Screens\ScreenRegistry;
 use Odden\Core\Support\ModelRegistry;
 use Odden\Sales\Console\Commands\ExpireStaleQuotesCommand;
 use Odden\Sales\Console\Commands\ProcessCadencesCommand;
@@ -29,14 +30,12 @@ use Odden\Sales\Models\Quote;
 use Odden\Sales\Models\SalesSequenceEnrollment;
 use Odden\Sales\Registry\MoveDealStage;
 use Odden\Sales\Registry\SearchDeals;
+use Odden\Sales\Screens\SalesScreens;
 use Odden\Sales\Services\EloquentDealGateway;
 use Odden\Sales\Services\NoExternalBusyTime;
 
 class SalesServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
         $this->mergeConfigFrom(
@@ -52,11 +51,10 @@ class SalesServiceProvider extends ServiceProvider
         });
 
         $this->callAfterResolving(ActionRegistry::class, fn (ActionRegistry $registry) => $registry->register(SearchDeals::class, MoveDealStage::class));
+
+        $this->callAfterResolving(ScreenRegistry::class, fn (ScreenRegistry $screens) => SalesScreens::register($screens));
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
         $this->callAfterResolving(DemoRegistry::class, fn (DemoRegistry $registry) => $registry->register(SalesDemoSeeder::class));
@@ -99,7 +97,6 @@ class SalesServiceProvider extends ServiceProvider
             $columns->add(fn (): string => config('odden-sales.tables.automations', 'odden_stage_automations'), 'action_payload', 'stage_automations.action_payload');
         });
 
-        // The figures a workspace can choose to keep encrypted (PLAN-encryption-at-rest.md, section 6).
         $this->callAfterResolving(BusinessDataColumns::class, function (BusinessDataColumns $columns): void {
             $columns->add(fn (): string => config('odden-sales.tables.deals', 'odden_deals'), 'amount', 'deals.amount');
             $columns->add(fn (): string => config('odden-sales.tables.quotas', 'odden_sales_quotas'), 'target_amount', 'sales_quotas.target_amount');
@@ -145,7 +142,6 @@ class SalesServiceProvider extends ServiceProvider
             });
         }
 
-        // Synchronous on purpose: runs inside Core's merge transaction.
         Event::listen(ContactsMerged::class, [MoveMergedRecords::class, 'handleContactsMerged']);
 
         Event::listen(MeetingBookingCancelled::class, [SendMeetingCancellationMails::class, 'handle']);
