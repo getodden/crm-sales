@@ -11,18 +11,6 @@ use Odden\Sales\Models\SalesMeetingBooking;
 use Odden\Sales\Models\SalesMeetingLink;
 use Throwable;
 
-/**
- * Computes the open booking slots of a meeting link.
- *
- * Working hours are a map of lowercase English day names to lists of "HH:MM-HH:MM" windows in the
- * link's timezone, for example ['monday' => ['09:00-12:00', '13:00-17:00']]. Days that are missing
- * or empty have no slots. A link without working hours uses odden-sales.meetings.default_working_hours.
- *
- * Slots start at the beginning of each window and repeat every duration + buffer minutes while the
- * meeting still ends inside the window. Slots in the past, beyond the booking window, or overlapping
- * one of the host's active bookings (on any of their links, widened by this link's buffer) are left out.
- * So are slots overlapping the host's busy time outside this app, from the bound ExternalBusyTime.
- */
 class MeetingAvailability
 {
     public const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -30,8 +18,37 @@ class MeetingAvailability
     public function __construct(protected ExternalBusyTime $externalBusyTime) {}
 
     /**
-     * The link's working hours, normalized to day => list of [startMinutes, endMinutes].
-     *
+     * @return array<string, list<string>>|null
+     */
+    public static function normalizeWorkingHours(mixed $hours): ?array
+    {
+        if (! is_array($hours)) {
+            return null;
+        }
+
+        $normalized = [];
+
+        foreach (MeetingAvailability::DAYS as $day) {
+            $windows = $hours[$day] ?? [];
+
+            if (! is_array($windows)) {
+                continue;
+            }
+
+            $windows = array_values(array_filter(
+                array_map(fn (mixed $window): string => is_string($window) ? trim($window) : '', $windows),
+                fn (string $window): bool => $window !== '',
+            ));
+
+            if ($windows !== []) {
+                $normalized[$day] = $windows;
+            }
+        }
+
+        return $normalized === [] ? null : $normalized;
+    }
+
+    /**
      * @return array<string, list<array{0: int, 1: int}>>
      */
     public function workingHours(SalesMeetingLink $link): array
@@ -64,10 +81,7 @@ class MeetingAvailability
     }
 
     /**
-     * Open slot start times on a date, in the link's timezone, earliest first.
-     *
-     * @param  CarbonInterface|string  $date  A Y-m-d date in the link's timezone (a Carbon instance's own date is used).
-     * @param  list<array{0: int, 1: int}>|null  $busy  The host's busy periods (bookings and external time) covering that day, when already loaded.
+     * @param  list<array{0: int, 1: int}>|null  $busy
      * @return list<CarbonImmutable>
      */
     public function slotsFor(SalesMeetingLink $link, CarbonInterface|string $date, ?array $busy = null): array
@@ -75,13 +89,6 @@ class MeetingAvailability
         return $this->openSlots($link, $date, $busy, true);
     }
 
-    /**
-     * Whether a meeting can be booked starting exactly at $startsAt.
-     *
-     * With $withExternal false only the host's bookings are checked. BookMeetingAction does that in its
-     * re-check under the booking lock, so the external source is never called while the lock is held:
-     * the lock serializes bookings in this app, not changes in an external calendar.
-     */
     public function isAvailable(SalesMeetingLink $link, CarbonInterface $startsAt, bool $withExternal = true): bool
     {
         $local = CarbonImmutable::instance($startsAt)->setTimezone($link->timezoneName());
@@ -127,7 +134,6 @@ class MeetingAvailability
         $candidates = [];
 
         foreach ($windows as [$startMinutes, $endMinutes]) {
-            // setTime() keeps wall-clock times right on daylight-saving change days.
             $windowEnd = $endMinutes === 24 * 60 ? $day->addDay() : $day->setTime(intdiv($endMinutes, 60), $endMinutes % 60);
             $slot = $day->setTime(intdiv($startMinutes, 60), $startMinutes % 60);
 
@@ -166,15 +172,11 @@ class MeetingAvailability
         return $open;
     }
 
-    /**
-     * The first date (Y-m-d, link timezone) with an open slot, or null if none in the booking window.
-     */
     public function firstAvailableDate(SalesMeetingLink $link): ?string
     {
         $date = CarbonImmutable::now($link->timezoneName())->startOfDay();
         $last = $this->lastBookableDate($link);
 
-        // The host's busy periods over the whole window in one query and one external call, rather than per day.
         $buffer = max(0, $link->buffer_minutes);
         $busy = $this->allBusyPeriods($link, $date->subMinutes($buffer), $last->addDay()->addMinutes($buffer));
 
@@ -189,9 +191,6 @@ class MeetingAvailability
         return null;
     }
 
-    /**
-     * The last date visitors can book, at the start of that day in the link's timezone.
-     */
     public function lastBookableDate(SalesMeetingLink $link): CarbonImmutable
     {
         $days = max(0, (int) config('odden-sales.meetings.booking_window_days', 60));
@@ -200,8 +199,6 @@ class MeetingAvailability
     }
 
     /**
-     * Parse "HH:MM-HH:MM" into minutes from midnight. The end may be 24:00.
-     *
      * @return array{0: int, 1: int}|null
      */
     public static function parseWindow(string $window): ?array
@@ -221,8 +218,6 @@ class MeetingAvailability
     }
 
     /**
-     * The host's bookings and external busy time overlapping a period, as [start, end] Unix timestamps.
-     *
      * @return list<array{0: int, 1: int}>
      */
     protected function allBusyPeriods(SalesMeetingLink $link, CarbonImmutable $from, CarbonImmutable $to): array
@@ -231,9 +226,6 @@ class MeetingAvailability
     }
 
     /**
-     * The host's busy time outside this app. A failing source is reported and counts as no busy time,
-     * so it cannot take the public booking page down.
-     *
      * @return list<array{0: int, 1: int}>
      */
     protected function externalPeriods(SalesMeetingLink $link, CarbonImmutable $from, CarbonImmutable $to): array
@@ -248,13 +240,10 @@ class MeetingAvailability
     }
 
     /**
-     * The host's active bookings overlapping a period, as [start, end] Unix timestamps.
-     *
      * @return list<array{0: int, 1: int}>
      */
     protected function busyPeriods(SalesMeetingLink $link, CarbonImmutable $from, CarbonImmutable $to): array
     {
-        // Datetime columns are stored in the app's timezone, so compare in it.
         $appTimezone = (string) config('app.timezone', 'UTC');
 
         return array_values(SalesMeetingBooking::query()

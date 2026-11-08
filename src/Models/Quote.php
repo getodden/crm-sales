@@ -35,8 +35,8 @@ use Odden\Sales\Exceptions\QuoteNotAcceptableException;
  * @property float $total_amount
  * @property string $currency
  * @property string|null $terms
- * @property string|null $notes Shown to the customer on the quote page.
- * @property string|null $internal_notes Never rendered publicly.
+ * @property string|null $notes
+ * @property string|null $internal_notes
  * @property string $public_token
  * @property CarbonInterface|null $expires_at
  * @property CarbonInterface|null $accepted_at
@@ -59,22 +59,16 @@ class Quote extends Model implements BlindIndexed
     use ProtectedByArea;
     use SoftDeletes;
 
-    /**
-     * What the customer's signature covers: none of it changes once the quote is accepted.
-     */
+    public const SYSTEM_ATTRIBUTES = ['quote_number', 'public_token', 'accepted_at', 'signed_by_name', 'signed_by_email', 'subtotal', 'total_amount'];
+
     private const SIGNED_ATTRIBUTES = [
         'status', 'subtotal', 'discount_amount', 'tax_amount', 'total_amount', 'currency', 'deal_id',
         'accepted_at', 'signed_by_name', 'signed_by_email',
     ];
 
-    /**
-     * Set while accept() records the signature: the only way a quote becomes accepted.
-     */
     private bool $signing = false;
 
     /**
-     * The attributes that are mass assignable.
-     *
      * @var list<string>
      */
     protected $fillable = [
@@ -98,17 +92,12 @@ class Quote extends Model implements BlindIndexed
         'user_id',
     ];
 
-    /**
-     * Get the table associated with the model.
-     */
     public function getTable(): string
     {
         return config('odden-sales.tables.quotes', 'odden_quotes');
     }
 
     /**
-     * Get the attributes that should be cast.
-     *
      * @return array<string, string>
      */
     protected function casts(): array
@@ -130,8 +119,6 @@ class Quote extends Model implements BlindIndexed
     }
 
     /**
-     * The title ("Quote for {deal name}") is found again through the search index: by word and by the start of a word.
-     *
      * @return array<string, array<string, string|true>>
      */
     public static function blindIndexedColumns(): array
@@ -145,8 +132,6 @@ class Quote extends Model implements BlindIndexed
     }
 
     /**
-     * Quotes with a word of this text at the start of a word of the title (every word typed must match).
-     *
      * @param  Builder<$this>  $query
      * @return Builder<$this>
      */
@@ -155,9 +140,6 @@ class Quote extends Model implements BlindIndexed
         return $this->scopeWhereBlindWords($query, ['title'], $text);
     }
 
-    /**
-     * Bootstrap the model and its events.
-     */
     protected static function booted(): void
     {
         static::creating(function (self $quote): void {
@@ -166,7 +148,6 @@ class Quote extends Model implements BlindIndexed
             }
 
             if (empty($quote->quote_number)) {
-                // Five random characters can repeat; the number is unique, so look for a free one.
                 do {
                     $number = 'Q-'.now()->format('Y').'-'.strtoupper(Str::random(5));
                 } while (static::query()->withTrashed()->where('quote_number', $number)->exists());
@@ -175,8 +156,6 @@ class Quote extends Model implements BlindIndexed
             }
         });
 
-        // The customer's signature covers the figures, so they are fixed once the quote is accepted, and so is the
-        // acceptance itself. A quote only becomes accepted by being signed, through accept().
         static::updating(function (self $quote): void {
             if ($quote->getOriginal('status') === QuoteStatus::Accepted && $quote->isDirty(self::SIGNED_ATTRIBUTES)) {
                 throw QuoteLockedException::signed();
@@ -187,7 +166,6 @@ class Quote extends Model implements BlindIndexed
             }
         });
 
-        // A new discount or tax changes the total, whether or not the quote has items.
         static::saved(function (self $quote): void {
             if ($quote->wasChanged(['discount_amount', 'tax_amount'])) {
                 $quote->recalculateTotals();
@@ -196,8 +174,6 @@ class Quote extends Model implements BlindIndexed
     }
 
     /**
-     * The deal this quote belongs to.
-     *
      * @return BelongsTo<Deal, $this>
      */
     public function deal(): BelongsTo
@@ -206,8 +182,6 @@ class Quote extends Model implements BlindIndexed
     }
 
     /**
-     * Line items on this quote.
-     *
      * @return HasMany<QuoteItem, $this>
      */
     public function items(): HasMany
@@ -216,8 +190,6 @@ class Quote extends Model implements BlindIndexed
     }
 
     /**
-     * The creator / sales rep for this quote.
-     *
      * @return BelongsTo<Model, $this>
      */
     public function user(): BelongsTo
@@ -227,9 +199,6 @@ class Quote extends Model implements BlindIndexed
         return $this->belongsTo($userModel, 'user_id');
     }
 
-    /**
-     * Recalculate totals from quote items.
-     */
     public function recalculateTotals(): self
     {
         $subtotal = (float) $this->items()->sum('total_price');
@@ -244,17 +213,11 @@ class Quote extends Model implements BlindIndexed
         return $this;
     }
 
-    /**
-     * The quote's value without tax: the subtotal after the discount.
-     */
     public function netAmount(): float
     {
         return round(max(0, (float) $this->total_amount - (float) $this->tax_amount), 2);
     }
 
-    /**
-     * Check if the quote has expired.
-     */
     public function isExpired(): bool
     {
         if ($this->status === QuoteStatus::Accepted) {
@@ -264,25 +227,17 @@ class Quote extends Model implements BlindIndexed
         return $this->status === QuoteStatus::Expired || $this->hasPassedExpiryDate();
     }
 
-    /**
-     * Whether the expiry date has passed. A quote stays valid through the whole of its expiry day.
-     */
     public function hasPassedExpiryDate(): bool
     {
         return $this->expires_at !== null && $this->expires_at->toDateString() < today()->toDateString();
     }
 
-    /**
-     * Whether the quote can still be accepted: not accepted, declined or expired, and not past its expiry date.
-     */
     public function isAcceptable(): bool
     {
         return ! $this->status->isTerminal() && ! $this->hasPassedExpiryDate();
     }
 
     /**
-     * Scope query to quotes whose expiry date has passed (the same rule as hasPassedExpiryDate()).
-     *
      * @param  Builder<$this>  $query
      * @return Builder<$this>
      */
@@ -292,9 +247,6 @@ class Quote extends Model implements BlindIndexed
     }
 
     /**
-     * Accept the quote and record digital signature. Only the quote's own state is changed; use
-     * AcceptQuoteAction to also close the deal as won.
-     *
      * @throws QuoteNotAcceptableException
      */
     public function accept(string $name, string $email): self
@@ -319,9 +271,6 @@ class Quote extends Model implements BlindIndexed
         return $this;
     }
 
-    /**
-     * Create a new factory instance for the model.
-     */
     protected static function newFactory(): QuoteFactory
     {
         return QuoteFactory::new();
